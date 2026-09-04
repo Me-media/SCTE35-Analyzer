@@ -167,19 +167,6 @@ The database, uploaded files, snapshots, and saved clips live in `./data/`
 (bind-mounted, see `docker-compose.yml`) and survive both `git pull` and
 `docker compose up --build`.
 
-> **One-time step when updating to v0.7.0 or later:** this release renamed
-> the project (again) to **SCTE35 Analyzer**, which also renamed the
-> Docker service/container (`SCTE35-Analyzer` → `scte35-analyzer`).
-> Compose tracks a running container by that name, so before your first
-> `docker compose up -d --build` on this version, stop the old one first —
-> `docker compose down` (run against the *old* `docker-compose.yml`, i.e.
-> before `git pull`) or `docker rm -f SCTE35-Analyzer` — otherwise, with
-> `network_mode: host` (see below), the new container would try to bind
-> the same port while the old one is still holding it and just crash-loop.
-> `./data/` and its sqlite database are unaffected either way (the app
-> renames its own database file on its own first start); this is purely
-> about the container name Compose tracks.
-
 ### Uninstalling
 
 ```bash
