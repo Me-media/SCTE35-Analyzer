@@ -1,0 +1,53 @@
+# v0.7.0 renamed this service/image/container (from dai-verifier-gui) --
+# Compose tracks a running container by the service key below, so on your
+# FIRST deploy of this version, `docker compose up -d --build` would start
+# a brand new "scte35-analyzer" container alongside the still-running old
+# "dai-verifier-gui" one instead of replacing it. With network_mode: host
+# (see below) both would try to bind :8000, so the new one would just
+# crash-loop. Run `docker compose down` against the OLD compose file (or
+# `docker rm -f dai-verifier-gui`) BEFORE pulling this update and running
+# `docker compose up -d --build` again. Application data is unaffected
+# either way -- it lives in the bind-mounted ./data directory below, keyed
+# to the host path, not to the container/service name.
+services:
+  scte35-analyzer:
+    build: .
+    image: scte35-analyzer:latest
+    container_name: scte35-analyzer
+    restart: unless-stopped
+
+    # Host networking is the default here because real IGMP multicast join
+    # (the --addr 239.x.x.x live-ingest path) does not work reliably through
+    # Docker's default bridge network on Linux -- the bridge simply doesn't
+    # forward external multicast traffic into the container without extra
+    # host-side routing/igmpproxy setup. With network_mode: host the
+    # container joins multicast groups exactly as a process running
+    # directly on the host would, and the GUI is reachable at
+    # http://<host-ip>:8000 directly (no `ports:` mapping needed or used).
+    #
+    # If you only ever use file upload / HLS / DASH ingest (no live
+    # multicast UDP/RTP), you can switch to normal bridge networking
+    # instead for better isolation -- comment out network_mode below and
+    # uncomment the `ports:` block instead.
+    network_mode: host
+    # ports:
+    #   - "8000:8000"
+
+    volumes:
+      # Persistent storage: sqlite DB, uploaded files, IDR snapshots, and
+      # saved raw-TS segments for every job. A bind mount (rather than a
+      # named volume) so you can browse/back up ./data directly from the
+      # host.
+      - ./data:/data
+
+    environment:
+      - SCTE35_ANALYZER_LOG_LEVEL=INFO
+      # Uncomment to cap total upload size (bytes). Default: 20 GiB.
+      # - SCTE35_ANALYZER_MAX_UPLOAD_BYTES=21474836480
+
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/api/health', timeout=3).status==200 else 1)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s

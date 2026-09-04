@@ -1,0 +1,23 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+*.egg-info/
+
+# Node / frontend build
+node_modules/
+frontend/dist/
+frontend/.vite/
+
+# Runtime data (bind-mounted / volume in Docker; never committed)
+data/
+backend/storage/
+*.db
+*.db-wal
+*.db-shm
+
+# Editors / OS
+.DS_Store
+.vscode/
+.idea/
+*.swp
