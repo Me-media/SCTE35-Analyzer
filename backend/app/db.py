@@ -117,7 +117,13 @@ CREATE INDEX IF NOT EXISTS idx_cue_snapshots_job ON cue_snapshots(job_id, id);
 
 
 def _now():
-    return time.strftime("%Y-%m-%dT%H:%M:%S")
+    """Naive (no offset suffix) ISO8601, always UTC -- explicitly
+    time.gmtime(), not time.localtime()/a bare strftime(), so this stays
+    UTC regardless of the container's configured timezone. The GUI labels
+    every field built from this "UTC" and separately renders a local-time
+    conversion for the viewer (see frontend/src/lib/time.ts); that label
+    would be a lie if this ever silently reverted to time.localtime()."""
+    return time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime())
 
 
 class Database:
@@ -260,6 +266,41 @@ class Database:
                 self._conn.execute(f"DELETE FROM {table} WHERE job_id=?", (job_id,))
             self._conn.execute("DELETE FROM jobs WHERE id=?", (job_id,))
             self._conn.commit()
+
+    def flush_job_data(self, job_id):
+        """Like delete_job(), minus the last line -- clears every data
+        table for this job (cues, markers, segments, snapshots,
+        cue_snapshots) but leaves the `jobs` row itself alone, so the
+        job's name/source_config/tuning_config/retention settings survive.
+        Used by app.jobs.cleanup.flush_all_job_data() ("Flush all data" in
+        the GUI). Returns the deleted segments/snapshots/cue_snapshots
+        rows (the caller still needs their `path`/`mp4_path` to remove the
+        on-disk files -- this method never touches the filesystem itself,
+        same split of responsibility as delete_segments_older_than() etc.)
+        plus how many marker/cue rows were removed, via each DELETE's own
+        cursor.rowcount rather than a separate SELECT COUNT(*)."""
+        with self._lock:
+            seg_rows = [_row_to_segment(r) for r in self._conn.execute(
+                "SELECT * FROM segments WHERE job_id=?", (job_id,)).fetchall()]
+            snap_rows = [dict(r) for r in self._conn.execute(
+                "SELECT * FROM snapshots WHERE job_id=?", (job_id,)).fetchall()]
+            cue_snap_rows = [dict(r) for r in self._conn.execute(
+                "SELECT * FROM cue_snapshots WHERE job_id=?", (job_id,)).fetchall()]
+            marker_count = self._conn.execute(
+                "DELETE FROM markers WHERE job_id=?", (job_id,)).rowcount
+            cue_count = self._conn.execute(
+                "DELETE FROM cues WHERE job_id=?", (job_id,)).rowcount
+            self._conn.execute("DELETE FROM segments WHERE job_id=?", (job_id,))
+            self._conn.execute("DELETE FROM snapshots WHERE job_id=?", (job_id,))
+            self._conn.execute("DELETE FROM cue_snapshots WHERE job_id=?", (job_id,))
+            self._conn.commit()
+        return {
+            "markers_deleted": marker_count,
+            "cues_deleted": cue_count,
+            "segments": seg_rows,
+            "snapshots": snap_rows,
+            "cue_snapshots": cue_snap_rows,
+        }
 
     # -- cues ---------------------------------------------------------------
 

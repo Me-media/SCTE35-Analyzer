@@ -447,6 +447,19 @@ class JobManager:
         return cleanup.purge_job(
             self.db, job_id, segment_max_age_s=segment_max_age_s, snapshot_max_age_s=snapshot_max_age_s)
 
+    def flush_job_data(self, job_id: str) -> Optional[dict]:
+        """On-demand full wipe of a job's SCTE-35 data (POST
+        /api/jobs/{id}/flush, "Flush all data" in the GUI's Clean up
+        menu) -- markers/cues/segments/snapshots are all deleted, but the
+        job's own name/source/tuning/retention settings are kept. Works
+        regardless of whether the job is running, same reasoning as
+        cleanup_job_now(): this never touches the running Probe, only
+        this process's own DB/filesystem state. Returns None if the job
+        doesn't exist, otherwise the flush_all_job_data() summary dict."""
+        if self.db.get_job(job_id) is None:
+            return None
+        return cleanup.flush_all_job_data(self.db, job_id)
+
     def start_retention_sweep(self, interval_s: float = 900.0):
         """Called once from FastAPI's startup hook (see main.py's
         lifespan), alongside bind_event_loop/reconcile_orphaned_jobs.

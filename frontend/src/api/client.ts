@@ -91,6 +91,18 @@ export const api = {
         body: JSON.stringify(body),
       },
     ),
+  // "Flush all data": deletes every marker/cue/segment/snapshot for this
+  // job, but keeps the job itself (name/source/tuning/retention settings)
+  // intact. No body -- unlike cleanupJob above, this always clears
+  // everything, there's no partial/age-based variant of a deliberate wipe.
+  flushJobData: (id: string) =>
+    req<{
+      markers_deleted: number;
+      cues_deleted: number;
+      segments_deleted: number;
+      snapshot_files_deleted: number;
+      bytes_freed: number;
+    }>(`/api/jobs/${id}/flush`, { method: "POST" }),
 
   createLiveJob: (name: string, source: LiveSourceInput, tuning: TuningConfig) =>
     req<{ job_id: string }>("/api/jobs/live", {

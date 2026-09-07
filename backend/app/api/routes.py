@@ -211,6 +211,22 @@ def cleanup_job(job_id: str, body: CleanupRequest,
     return result
 
 
+@router.post("/jobs/{job_id}/flush")
+def flush_job(job_id: str, jobs: JobManager = Depends(get_jobs)):
+    """Deletes ALL saved SCTE-35 data for this job -- every marker, cue,
+    segment and snapshot -- while keeping the job itself (name/source/
+    tuning/retention settings) intact. "Flush all data" in the GUI's
+    Clean up menu: a full reset for re-baselining a channel without
+    losing its configuration and having to recreate it. Distinct from
+    DELETE /jobs/{id} below, which removes the job entirely. No request
+    body -- unlike /cleanup above, this always clears everything, there's
+    no partial/age-based variant of a deliberate full wipe."""
+    result = jobs.flush_job_data(job_id)
+    if result is None:
+        raise HTTPException(404, "Job not found")
+    return result
+
+
 @router.delete("/jobs/{job_id}")
 def delete_job(job_id: str, db: Database = Depends(get_db), jobs: JobManager = Depends(get_jobs)):
     jobs.stop_job(job_id, timeout=15.0)

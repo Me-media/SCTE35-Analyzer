@@ -554,7 +554,7 @@ def test_cleanup_purges_old_segments_and_snapshots(db):
             f.write(b"x" * 1000)
         return path
 
-    now_iso = time.strftime("%Y-%m-%dT%H:%M:%S")
+    now_iso = time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime())
     old_iso = cleanup.cutoff_iso(7200)  # 2 hours ago
 
     old_seg_path, new_seg_path = _make_file("old_segment.ts"), _make_file("new_segment.ts")
@@ -683,6 +683,78 @@ def test_db_migration_adds_retention_columns(storage_dir):
           "work correctly against the migrated schema")
 
 
+def test_flush_all_job_data(db, jobs):
+    """Covers "Flush all data" end-to-end (JobManager.flush_job_data() ->
+    app.jobs.cleanup.flush_all_job_data() -> db.flush_job_data()): every
+    marker/cue/segment/snapshot/cue_snapshot row and file for one job is
+    deleted, but the job's own row -- name, source_config, tuning_config,
+    retention settings -- survives completely untouched. Also covers the
+    counts returned to the caller (used for the GUI's confirmation
+    message after the action)."""
+    job_id = db.create_job("flush-test", "udp", {"addr": "239.1.1.9", "port": 6000}, {"tolerance_ms": 1234.0})
+    db.set_job_retention(job_id, 3600, 7200)
+    job_dir = config.job_dir(job_id)
+    os.makedirs(job_dir, exist_ok=True)
+
+    def _make_file(name):
+        path = os.path.join(job_dir, name)
+        with open(path, "wb") as f:
+            f.write(b"x" * 1000)
+        return path
+
+    db.insert_marker(job_id, {"cue_seq": 1, "verdict": "OK", "wallclock": "2026-01-01T00:00:00"})
+    db.insert_marker(job_id, {"cue_seq": 2, "verdict": "MISSED", "wallclock": "2026-01-01T00:01:00"})
+    db.insert_cue(job_id, {"cue_seq": 1, "wallclock": "2026-01-01T00:00:00", "command_type": "SpliceInsert"})
+
+    seg_path = _make_file("segment.ts")
+    db.insert_segment(job_id, {
+        "path": seg_path, "window_end_wallclock": "2026-01-01T00:00:00", "size_bytes": 1000})
+
+    snap_path = _make_file("snapshot.jpg")
+    db.insert_snapshot(job_id, {"path": snap_path, "kind": "idr", "idr_ticks": 1})
+
+    cue_snap_path = _make_file("cue_snapshot.jpg")
+    db.insert_cue_snapshot(job_id, {
+        "cue_seq": 1, "tag": "time_to_event_cue_arrival", "path": cue_snap_path, "frame_pts": 90000})
+
+    assert len(db.list_markers(job_id, limit=1000)) == 2
+    assert len(db.list_cues(job_id, limit=1000)) == 1
+    assert len(db.list_segments(job_id)) == 1
+    assert len(db.list_snapshots(job_id)) == 1
+    assert len(db.list_cue_snapshots(job_id)) == 1
+
+    result = jobs.flush_job_data(job_id)
+    assert result is not None
+    assert result["markers_deleted"] == 2
+    assert result["cues_deleted"] == 1
+    assert result["segments_deleted"] == 1
+    assert result["snapshot_files_deleted"] == 2  # one plain snapshot + one cue_snapshot
+    assert result["bytes_freed"] == 3000
+
+    assert db.list_markers(job_id, limit=1000) == []
+    assert db.list_cues(job_id, limit=1000) == []
+    assert db.list_segments(job_id) == []
+    assert db.list_snapshots(job_id) == []
+    assert db.list_cue_snapshots(job_id) == []
+    assert not os.path.exists(seg_path)
+    assert not os.path.exists(snap_path)
+    assert not os.path.exists(cue_snap_path)
+
+    # The job itself -- its settings -- must be completely untouched.
+    job = db.get_job(job_id)
+    assert job is not None, "flush must never delete the job row itself"
+    assert job["name"] == "flush-test"
+    assert job["source_config"]["addr"] == "239.1.1.9"
+    assert job["tuning_config"]["tolerance_ms"] == 1234.0
+    assert job["segment_retention_s"] == 3600
+    assert job["snapshot_retention_s"] == 7200
+    print("OK: flush_job_data() clears every marker/cue/segment/snapshot row and file for a "
+          "job while leaving its name/source/tuning/retention settings untouched")
+
+    assert jobs.flush_job_data("does-not-exist") is None
+    print("OK: flush_job_data() returns None for a nonexistent job (-> 404 at the route)")
+
+
 async def main():
     with tempfile.TemporaryDirectory(prefix="scte35_analyzer_it_") as storage_dir:
         db, jobs, file_job_id = await test_file_job(storage_dir)
@@ -696,6 +768,7 @@ async def main():
         test_video_info_ffprobe_and_probe_event(storage_dir)
         test_cleanup_purges_old_segments_and_snapshots(db)
         test_db_migration_adds_retention_columns(storage_dir)
+        test_flush_all_job_data(db, jobs)
         test_delete_job(db, jobs, file_job_id)
         test_delete_job(db, jobs, udp_job_id)
         for job_id in concurrent_job_ids:

@@ -229,7 +229,9 @@ export default function CompareView({
             <table className="w-full text-sm">
               <thead className="sticky top-0 bg-slate-900/95 backdrop-blur text-left text-xs uppercase tracking-wide text-slate-400">
                 <tr>
-                  <th className="px-3 py-2">Time</th>
+                  <th className="px-3 py-2" title="Every timestamp in this tool is stored and reported in UTC">
+                    Time (UTC)
+                  </th>
                   <th className="px-3 py-2">Stream</th>
                   <th className="px-3 py-2">Event ID</th>
                   <th className="px-3 py-2">Delta</th>

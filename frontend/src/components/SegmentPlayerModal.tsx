@@ -40,7 +40,7 @@ export default function SegmentPlayerModal({
         <div className="flex items-center justify-between border-b border-slate-800 px-4 py-3">
           <div>
             <h3 className="font-medium text-slate-100">
-              Clip: {segment.window_start_wallclock} – {segment.window_end_wallclock}
+              Clip (UTC): {segment.window_start_wallclock} – {segment.window_end_wallclock}
             </h3>
             <p className="text-xs text-slate-400">
               {segment.event_count} SCTE-35 event(s) · cue_seq {segment.event_cue_seqs.join(", ")} ·{" "}

@@ -38,6 +38,8 @@ export default function JobDetail({
   );
   const [cleanupMenuOpen, setCleanupMenuOpen] = useState(false);
   const [openCleanupCategory, setOpenCleanupCategory] = useState<"segment" | "snapshot" | null>(null);
+  const [flushing, setFlushing] = useState(false);
+  const [flushResult, setFlushResult] = useState<string | null>(null);
   const markerIds = useRef<Set<number>>(new Set());
   const segmentIds = useRef<Set<number>>(new Set());
   const cueSnapshotIds = useRef<Set<number>>(new Set());
@@ -146,6 +148,42 @@ export default function JobDetail({
     }
   }
 
+  async function handleFlushAllData() {
+    if (
+      !confirm(
+        `Delete ALL saved markers, cues, segments and snapshots for "${job?.name ?? "this channel"}"?\n\n` +
+          "The channel itself and its settings (name, source, tuning, retention) are kept -- " +
+          "only its collected SCTE-35 data is wiped. This cannot be undone.",
+      )
+    ) {
+      return;
+    }
+    setFlushing(true);
+    setFlushResult(null);
+    try {
+      const result = await api.flushJobData(jobId);
+      setFlushResult(
+        `Deleted ${result.markers_deleted} marker(s), ${result.cues_deleted} cue(s), ` +
+          `${result.segments_deleted} segment(s), ${result.snapshot_files_deleted} snapshot file(s), ` +
+          `freed ${fmtBytes(result.bytes_freed)}.`,
+      );
+      // Reflect the flush in the GUI immediately -- new markers/segments/
+      // snapshots (if the job is still running) will still arrive live over
+      // the websocket exactly as before, this just clears what's already
+      // rendered instead of waiting on a reconnect/backlog replay.
+      markerIds.current = new Set();
+      segmentIds.current = new Set();
+      cueSnapshotIds.current = new Set();
+      setMarkers([]);
+      setSegments([]);
+      setCueSnapshots([]);
+    } catch (e) {
+      setFlushResult(e instanceof Error ? e.message : String(e));
+    } finally {
+      setFlushing(false);
+    }
+  }
+
   if (!job) {
     return <div className="p-8 text-sm text-slate-500">Loading…</div>;
   }
@@ -238,6 +276,21 @@ export default function JobDetail({
                     cleaningUp={cleaningUp === "snapshot"}
                     resultMessage={cleanupResult?.category === "snapshot" ? cleanupResult.message : null}
                   />
+                  <div className="border-t border-slate-800 px-3 py-2">
+                    <button
+                      onClick={handleFlushAllData}
+                      disabled={flushing}
+                      className="w-full rounded-md bg-red-500/10 px-2.5 py-1.5 text-left text-sm text-red-400 ring-1 ring-red-500/30 hover:bg-red-500/20 disabled:cursor-not-allowed disabled:opacity-50"
+                      title="Deletes every marker, cue, segment and snapshot for this channel -- keeps its name, source and tuning settings"
+                    >
+                      {flushing ? "Flushing…" : "Flush all data"}
+                    </button>
+                    <p className="mt-1 text-[11px] leading-snug text-slate-500">
+                      Wipes every marker/cue/segment/snapshot for this channel. Keeps the channel and its settings
+                      (name, source, tuning, retention). Cannot be undone.
+                    </p>
+                    {flushResult && <p className="mt-1 text-xs text-emerald-400">{flushResult}</p>}
+                  </div>
                   <p className="border-t border-slate-800 px-3 pt-2 text-[11px] leading-snug text-slate-500">
                     Auto-delete runs in the background (checked roughly every 15 minutes). "Clean up now" deletes
                     immediately and doesn't change that setting. Deleting old snapshots leaves older marker rows
@@ -272,7 +325,7 @@ export default function JobDetail({
           <h3 className="text-sm font-medium text-slate-300">Video info</h3>
           <div className="flex items-center gap-2">
             {job.video_info?.sampled_at && (
-              <span className="text-xs text-slate-500">Sampled {job.video_info.sampled_at}</span>
+              <span className="text-xs text-slate-500">Sampled {job.video_info.sampled_at} UTC</span>
             )}
             <button
               onClick={async () => {
@@ -332,9 +385,9 @@ export default function JobDetail({
 
       <section className="rounded-lg bg-slate-900 p-4 ring-1 ring-slate-800">
         <h3 className="mb-2 text-sm font-medium text-slate-300">
-          Delta (SCTE-35 target vs. matched IDR), in arrival order
+          Delta (SCTE-35 target vs. matched IDR), over time (UTC)
         </h3>
-        <DeltaChart markers={markers} okThresholdMs={Number(job.tuning_config.ok_threshold_ms ?? 41)} />
+        <DeltaChart key={jobId} markers={markers} okThresholdMs={Number(job.tuning_config.ok_threshold_ms ?? 41)} />
       </section>
 
       <section className="rounded-lg bg-slate-900 ring-1 ring-slate-800">

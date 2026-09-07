@@ -15,7 +15,7 @@ insertion. See the original project's README (linked above) for the full
 technical background on the measurement itself; this document focuses on
 the GUI/operations side.
 
-Current version: **0.8.1** — shown in the bottom-right corner of the GUI
+Current version: **0.10.0** — shown in the bottom-right corner of the GUI
 and via `GET /api/version` (a quick way to confirm a deploy actually
 picked up new code). See [CHANGELOG.md](./CHANGELOG.md) for the full
 version history.
@@ -28,8 +28,10 @@ version history.
   copy`, no re-encode).
 - **Markers in real time**, both as a table (every field: event_id, type,
   target PTS, IDR PTS, delta, verdict, pre-roll, signaling) and graphically
-  (a delta chart over time, color-coded by verdict), pushed to the browser
-  over WebSocket as the engine finds them.
+  (a delta chart plotted against real UTC time, color-coded by verdict),
+  pushed to the browser over WebSocket as the engine finds them. The chart
+  zooms to quick presets (1mo/1w/1d/12h/6h/3h/1h) anchored to the most
+  recent marker, or a manually picked from/to time range.
 - **JPEG snapshot** of the matched IDR frame per marker (and optionally N
   frames before it, to see the actual transition) — see immediately
   whether the cut was clean, black, or corrupted instead of trusting the
@@ -76,7 +78,17 @@ version history.
   12h, 1 day, or 1 week — enforced by a periodic background sweep that
   covers stopped jobs too; or run an immediate "Clean up now" one-off
   purge at a chosen age, independent of that setting. Both live behind the
-  "Clean up" button next to "Export CSV" on the job detail page.
+  "Clean up" button next to "Export CSV" on the job detail page. The same
+  menu also has "Flush all data" — deletes every marker, cue, segment and
+  snapshot for that channel while keeping the channel and its settings
+  (name, source, tuning, retention), for re-baselining without recreating
+  the job.
+- **All timestamps are UTC**, labeled as such everywhere they're shown
+  (marker/segment times, the video-info sample time) — this is what's
+  stored and what's in CSV exports. The marker table additionally shows a
+  GUI-only "Local time" column (never stored, never exported) next to it,
+  and a live UTC + local clock sits in the top-right header for a
+  quick reference either way.
 
 ## Architecture
 
@@ -147,8 +159,8 @@ Python dependencies (including `threefive3` for SCTE-35 decoding) and
 `ffmpeg` are installed inside the container at build time.
 
 ```bash
-git clone https://github.com/Me-media/SCTE35-Analyzer.git
-cd SCTE35-Analyzer
+git clone https://github.com/Me-media/DAI-verifier-GUI.git
+cd DAI-verifier-GUI
 docker compose up -d --build
 ```
 
@@ -158,7 +170,7 @@ note below for why the port isn't mapped via `-p` the usual way).
 ### Updating
 
 ```bash
-cd SCTE35-Analyzer
+cd DAI-verifier-GUI
 git pull
 docker compose up -d --build
 ```
@@ -166,6 +178,19 @@ docker compose up -d --build
 The database, uploaded files, snapshots, and saved clips live in `./data/`
 (bind-mounted, see `docker-compose.yml`) and survive both `git pull` and
 `docker compose up --build`.
+
+> **One-time step when updating to v0.7.0 or later:** this release renamed
+> the project (again) to **SCTE35 Analyzer**, which also renamed the
+> Docker service/container (`dai-verifier-gui` → `scte35-analyzer`).
+> Compose tracks a running container by that name, so before your first
+> `docker compose up -d --build` on this version, stop the old one first —
+> `docker compose down` (run against the *old* `docker-compose.yml`, i.e.
+> before `git pull`) or `docker rm -f dai-verifier-gui` — otherwise, with
+> `network_mode: host` (see below), the new container would try to bind
+> the same port while the old one is still holding it and just crash-loop.
+> `./data/` and its sqlite database are unaffected either way (the app
+> renames its own database file on its own first start); this is purely
+> about the container name Compose tracks.
 
 ### Uninstalling
 

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { api } from "./api/client";
 import type { Job } from "./api/types";
+import Clock from "./components/Clock";
 import CompareView from "./components/CompareView";
 import JobDetail from "./components/JobDetail";
 import JobList from "./components/JobList";
@@ -120,14 +121,17 @@ export default function App() {
             <img src="/logo-mark.svg" alt="" className="h-7 w-7" />
             <span className="text-lg font-semibold text-slate-100">SCTE35 Analyzer</span>
           </button>
-          {view.name !== "new" && (
-            <button
-              onClick={() => setView({ name: "new" })}
-              className="rounded-md bg-sky-600 px-4 py-2 text-sm font-medium text-white hover:bg-sky-500"
-            >
-              + New job
-            </button>
-          )}
+          <div className="flex items-center gap-4">
+            <Clock />
+            {view.name !== "new" && (
+              <button
+                onClick={() => setView({ name: "new" })}
+                className="rounded-md bg-sky-600 px-4 py-2 text-sm font-medium text-white hover:bg-sky-500"
+              >
+                + New job
+              </button>
+            )}
+          </div>
         </div>
       </header>
 

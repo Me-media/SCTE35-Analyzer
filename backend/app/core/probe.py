@@ -893,7 +893,7 @@ def _ffprobe_video_info(ts_path, timeout=10):
         return None
     s = streams[0]  # -select_streams v:0 -- at most one stream can match
     return {
-        "sampled_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
+        "sampled_at": time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime()),
         "codec_name": s.get("codec_name"),
         "profile": s.get("profile"),
         "level": s.get("level"),
@@ -1053,7 +1053,7 @@ class Probe:
             os.makedirs(self.ts_dump_dir, exist_ok=True)
             self._ts_dump_cur = bytearray()
             self._ts_dump_window_start = time.monotonic()
-            self._ts_dump_window_start_wall = time.strftime("%Y-%m-%dT%H:%M:%S")
+            self._ts_dump_window_start_wall = time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime())
             self.ts_dump_queue = queue.Queue()
             self.ts_dump_thread = threading.Thread(
                 target=self._ts_dump_worker, daemon=True)
@@ -1238,7 +1238,7 @@ class Probe:
         record = {
             "tool_version": __version__,
             "cue_seq": seq,
-            "wallclock": time.strftime("%Y-%m-%dT%H:%M:%S"),
+            "wallclock": time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime()),
             "scte35_pid": self.scte35_pid,
             "command_type": command_type,
             "descriptor_summary": descriptor_summary,
@@ -1806,7 +1806,7 @@ class Probe:
             self._emit(entry, idr_ticks=None, kind=None, missed=True, miss_reason=reason)
 
     def _emit(self, entry, idr_ticks, kind, missed, miss_reason="timeout"):
-        wallclock = time.strftime("%Y-%m-%dT%H:%M:%S")
+        wallclock = time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime())
         if missed:
             delta_ms = None
             verdict = ("MISSED (input ended before a matching IDR was found)"
@@ -1983,10 +1983,10 @@ class Probe:
         self._ts_dump_event_count = 0
         self._ts_dump_event_seqs = []
         self._ts_dump_window_start = now
-        self._ts_dump_window_start_wall = time.strftime("%Y-%m-%dT%H:%M:%S")
+        self._ts_dump_window_start_wall = time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime())
 
     def _enqueue_ts_dump(self, payload, event_count, event_seqs, window_start_wall):
-        window_end_wall = time.strftime("%Y-%m-%dT%H:%M:%S")
+        window_end_wall = time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime())
         self._ts_dump_seq += 1
         # Sequence number first, zero-padded, so filenames sort correctly
         # (and stay unique) even with a short --ts-dump-window that ends

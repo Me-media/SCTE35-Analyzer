@@ -39,14 +39,20 @@ RETENTION_PRESETS_S = {
 
 
 def cutoff_iso(max_age_s: float) -> str:
-    """ISO8601 wallclock cutoff, in the exact format app.db._now() writes
-    (%Y-%m-%dT%H:%M:%S) -- segments/snapshots are matched against this as
-    plain text, not parsed back into datetimes, since that format sorts
-    correctly lexicographically. max_age_s=0 means "older than right now",
-    i.e. everything already saved (a same-second race is the only way
-    something saved in the current second survives) -- the one-off "delete
-    everything in this category" case, no separate code path needed."""
-    return time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime(time.time() - max_age_s))
+    """ISO8601 wallclock cutoff, UTC, in the exact format app.db._now()
+    writes (%Y-%m-%dT%H:%M:%S) -- segments/snapshots are matched against
+    this as plain text, not parsed back into datetimes, since that format
+    sorts correctly lexicographically. Explicitly time.gmtime() (not
+    time.localtime()): every wallclock timestamp this app writes is UTC
+    regardless of the container's configured timezone (see app.db._now(),
+    app.core.probe.py) -- the GUI labels these fields "UTC" and converts
+    to the viewer's local time for display, so the two must actually
+    agree independent of what timezone the backend host happens to run
+    in. max_age_s=0 means "older than right now", i.e. everything already
+    saved (a same-second race is the only way something saved in the
+    current second survives) -- the one-off "delete everything in this
+    category" case, no separate code path needed."""
+    return time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime(time.time() - max_age_s))
 
 
 def _unlink(path) -> int:
@@ -92,6 +98,39 @@ def purge_job(db, job_id: str, *, segment_max_age_s=None, snapshot_max_age_s=Non
             log.info("Job %s: purged %d snapshot file(s) older than %.0fs", job_id, len(rows), snapshot_max_age_s)
 
     return result
+
+
+def flush_all_job_data(db, job_id: str) -> dict:
+    """Deletes EVERY row of SCTE-35 data for one job -- markers, cues,
+    segments, snapshots, cue_snapshots -- both the DB rows and their
+    on-disk files, while leaving the job itself (name/source_config/
+    tuning_config/retention settings) completely untouched. This is
+    "Flush all data" in the GUI's Clean up menu: a full reset for
+    re-baselining a channel (e.g. after fixing a bad encoder config)
+    without recreating the job and losing its settings.
+
+    Unlike purge_job()/purge_all_jobs() above, this is not a retention
+    mechanism and does not depend on age -- it is an explicit, deliberate,
+    all-or-nothing wipe, only ever triggered by a direct user action
+    (POST /api/jobs/{id}/flush), never by the periodic sweep."""
+    result = db.flush_job_data(job_id)
+    bytes_freed = 0
+    for row in result["segments"]:
+        bytes_freed += _unlink(row.get("path"))
+        bytes_freed += _unlink(row.get("mp4_path"))
+    for row in result["snapshots"] + result["cue_snapshots"]:
+        bytes_freed += _unlink(row.get("path"))
+    log.info(
+        "Job %s: flushed all data (%d marker(s), %d cue(s), %d segment(s), %d snapshot file(s), %.1f MB freed)",
+        job_id, result["markers_deleted"], result["cues_deleted"], len(result["segments"]),
+        len(result["snapshots"]) + len(result["cue_snapshots"]), bytes_freed / 1e6)
+    return {
+        "markers_deleted": result["markers_deleted"],
+        "cues_deleted": result["cues_deleted"],
+        "segments_deleted": len(result["segments"]),
+        "snapshot_files_deleted": len(result["snapshots"]) + len(result["cue_snapshots"]),
+        "bytes_freed": bytes_freed,
+    }
 
 
 def purge_all_jobs(db) -> dict:

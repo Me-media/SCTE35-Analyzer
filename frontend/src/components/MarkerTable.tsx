@@ -1,6 +1,7 @@
 import { Fragment, useMemo, useState } from "react";
 import type { CueSnapshot, Marker, Segment } from "../api/types";
 import { basename, api } from "../api/client";
+import { formatLocal, localZoneName } from "../lib/time";
 import Badge, { verdictVariant } from "./Badge";
 
 const CUE_SNAPSHOT_LABELS: Record<CueSnapshot["tag"], string> = {
@@ -72,7 +73,12 @@ export default function MarkerTable({
       <table className="w-full text-sm">
         <thead className="sticky top-0 bg-slate-900/95 backdrop-blur text-left text-xs uppercase tracking-wide text-slate-400">
           <tr>
-            <th className="px-3 py-2">Time</th>
+            <th className="px-3 py-2" title="Every timestamp in this tool is stored and reported in UTC">
+              Time (UTC)
+            </th>
+            <th className="px-3 py-2" title={`Viewer's local time (${localZoneName()}) -- not stored, not in exports`}>
+              Local time
+            </th>
             <th className="px-3 py-2">Event ID</th>
             <th className="px-3 py-2">Type</th>
             <th className="px-3 py-2">Target PTS</th>
@@ -97,6 +103,9 @@ export default function MarkerTable({
                 >
                   <td className="px-3 py-2 mono text-xs text-slate-400 whitespace-nowrap">
                     {m.wallclock ?? "–"}
+                  </td>
+                  <td className="px-3 py-2 mono text-xs text-slate-500 whitespace-nowrap">
+                    {m.wallclock ? formatLocal(m.wallclock) : "–"}
                   </td>
                   <td className="px-3 py-2 mono">{m.event_id ?? "–"}</td>
                   <td className="px-3 py-2 text-xs text-slate-400">{m.command_type ?? "–"}</td>
@@ -150,7 +159,7 @@ export default function MarkerTable({
                 </tr>
                 {isOpen && (
                   <tr className="bg-slate-900/60">
-                    <td colSpan={11} className="px-3 py-3">
+                    <td colSpan={12} className="px-3 py-3">
                       <MarkerDetail
                         jobId={jobId}
                         marker={m}

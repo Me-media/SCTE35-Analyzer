@@ -6,4 +6,4 @@ Exposed to the frontend via GET /api/version (see app/api/routes.py) so
 the header can show it -- the simplest way to confirm a deploy actually
 picked up new code instead of the browser serving a stale cached build.
 """
-__version__ = "0.8.1"
+__version__ = "0.10.0"
