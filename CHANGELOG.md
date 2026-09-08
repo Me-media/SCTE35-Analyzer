@@ -8,6 +8,31 @@ the bottom-right corner of the GUI and via `GET /api/version` — check it
 after a deploy to confirm the new code actually landed, and compare
 against this file.
 
+## [0.10.1] - 2026-09-08
+
+### Fixed
+- **`pts_adjustment` was applied as raw 90kHz ticks but the decoding library
+  (`threefive3`) actually reports it in seconds** — its `SpliceInfoSection`
+  divides the raw 33-bit field by 90000 internally before exposing it, so
+  a real, nonzero adjustment (e.g. `2.04`, from a splice cue re-stamped by
+  an upstream device) was silently truncated to `int(2.04)` = 2 ticks
+  (~22 microseconds) instead of the intended 2.04-second correction. This
+  affected `target_pts`, and everything downstream of it: `delta_ms`,
+  `verdict`, `time_to_event_ms`, and the stored/exported
+  `pts_adjustment_ticks` field itself (which was really seconds, mislabeled
+  as ticks, in every CSV/JSON/DB row and in the GUI's marker detail view).
+  Only matters when something upstream of this probe re-stamps cues —
+  `pts_adjustment` is 0 for the large majority of feeds where it's never
+  touched, and this was found and confirmed against the library's public
+  source after a customer reported it via two probes on the same feed both
+  showing a suspicious `pts_adjustment_ticks: 2.04`. Fixed by converting
+  seconds → ticks explicitly (`round(pts_adjustment_s * 90000)`) at the one
+  point it's read, before any of the above are computed or stored. No
+  action needed unless your own tooling parsed `pts_adjustment_ticks` out
+  of old CSV/JSON exports or the DB directly — those historical values are
+  the mislabeled seconds figure, not ticks, and are not retroactively
+  corrected by this fix.
+
 ## [0.10.0] - 2026-09-07
 
 ### Added

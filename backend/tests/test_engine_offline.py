@@ -261,18 +261,29 @@ def test_pts_adjustment_applied():
 
     probe = mod.Probe(Args())
     base_pts = 300.0
-    adjustment_ticks = 900  # 10ms worth of 90kHz ticks
+    # threefive3's SpliceInfoSection.pts_adjustment is exposed in SECONDS
+    # (the library divides the raw 33-bit 90kHz field by 90000 internally
+    # via its as_90k() helper) -- this mock must match that real-world
+    # convention, not raw ticks, or this test would pass against the old,
+    # buggy code and miss regressions of the seconds->ticks fix.
+    adjustment_s = 2.04  # matches the real-world value reported by a customer
     SpliceInsert = type("SpliceInsert", (), {})
     fake_command = SpliceInsert()
     fake_command.pts_time = base_pts
     fake_command.splice_event_id = 1
     fake_command.out_of_network_indicator = True
-    fake_info = types.SimpleNamespace(pts_adjustment=adjustment_ticks)
+    fake_info = types.SimpleNamespace(pts_adjustment=adjustment_s)
     fake_cue = types.SimpleNamespace(command=fake_command, info_section=fake_info)
     probe._register_cue(fake_cue, 3)
-    expected_ticks = int(round(base_pts * mod.PTS_HZ)) + adjustment_ticks
+    expected_adjustment_ticks = int(round(adjustment_s * mod.PTS_HZ))
+    expected_ticks = int(round(base_pts * mod.PTS_HZ)) + expected_adjustment_ticks
     assert probe.pending[0]["target_ticks"] == expected_ticks, probe.pending[0]["target_ticks"]
-    print("OK: pts_adjustment from info_section is correctly added to command.pts_time")
+    # A near-zero (few-tick) shift here would mean the seconds->ticks
+    # conversion regressed back to treating pts_adjustment as raw ticks.
+    assert probe.pending[0]["pts_adjustment"] == expected_adjustment_ticks, probe.pending[0]["pts_adjustment"]
+    assert expected_adjustment_ticks > 180000  # sanity: >2s worth of 90kHz ticks, not a handful
+    print("OK: pts_adjustment (reported by threefive3 in seconds) is correctly "
+          "converted to 90kHz ticks before being added to command.pts_time")
     probe.close()
 
 

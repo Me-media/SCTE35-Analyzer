@@ -15,7 +15,7 @@ insertion. See the original project's README (linked above) for the full
 technical background on the measurement itself; this document focuses on
 the GUI/operations side.
 
-Current version: **0.10.0** — shown in the bottom-right corner of the GUI
+Current version: **0.10.1** — shown in the bottom-right corner of the GUI
 and via `GET /api/version` (a quick way to confirm a deploy actually
 picked up new code). See [CHANGELOG.md](./CHANGELOG.md) for the full
 version history.

@@ -33,6 +33,15 @@ truth in a compliance report):
      automatically (verified against the library source) -- this script
      applies it explicitly. If your headend never re-stamps cues upstream
      of this probe, pts_adjustment will normally be 0 and this is moot.
+     IMPORTANT: threefive3's SpliceInfoSection.pts_adjustment is exposed
+     as SECONDS (a float), not raw 90kHz ticks -- the library reads the
+     raw 33-bit field and immediately divides it by 90000 via its own
+     as_90k() helper before handing it to callers (verified against
+     threefive3/threefive source, Sept 2026). _register_cue() below
+     converts it back to ticks explicitly; treating it as already-ticks
+     was a real bug present through v0.10.0 that silently applied almost
+     no correction (a couple of ticks, i.e. microseconds) instead of the
+     intended multi-second shift whenever pts_adjustment was nonzero.
 
   2. Access-unit/PES alignment: this tool assumes one PES packet == one
      video access unit, which holds for essentially all broadcast-profile
@@ -1261,8 +1270,17 @@ class Probe:
                 "SCTE-35 #%d has no time-specified pts_time (immediate splice, "
                 "splice_null, or canceled event) -- nothing to match against IDR.", seq)
             return
-        pts_adjustment = getattr(info, "pts_adjustment", 0) or 0
-        target_ticks = (int(round(pts_time * PTS_HZ)) + int(pts_adjustment)) % PTS_MAX
+        pts_adjustment_s = getattr(info, "pts_adjustment", 0) or 0
+        # threefive3's SpliceInfoSection.pts_adjustment is already converted
+        # to SECONDS by the library (it divides the raw 33-bit 90kHz field
+        # by 90000 internally) -- NOT raw ticks, despite this project's own
+        # "_ticks" field name further down. Convert back to ticks explicitly
+        # so both the PTS-domain arithmetic below and the stored/displayed
+        # value are correct. See the module docstring, item 1, for details;
+        # this was verified against threefive3's actual source after a
+        # customer report of an unexpectedly-tiny correction being applied.
+        pts_adjustment_ticks = int(round(pts_adjustment_s * PTS_HZ))
+        target_ticks = (int(round(pts_time * PTS_HZ)) + pts_adjustment_ticks) % PTS_MAX
         event_id = getattr(cmd, "splice_event_id", None)
         out_of_network = getattr(cmd, "out_of_network_indicator", None)
         command_type = type(cmd).__name__
@@ -1314,7 +1332,7 @@ class Probe:
             "cue_seq": seq,
             "target_ticks": target_ticks,
             "raw_pts_time": pts_time,
-            "pts_adjustment": pts_adjustment,
+            "pts_adjustment": pts_adjustment_ticks,
             "event_id": event_id,
             "command_type": command_type,
             "out_of_network": out_of_network,
@@ -1360,10 +1378,10 @@ class Probe:
         # busy SCTE-35 PID.
         self.scte35_logger.info(
             "SCTE-35 #%d queued for matching: %s event_id=%s target_pts=%.6fs "
-            "(raw pts_time=%.6f, pts_adjustment=%s) time_to_event=%s "
+            "(raw pts_time=%.6f, pts_adjustment_ticks=%s) time_to_event=%s "
             "signal_verdict=%s descriptors=[%s]",
             seq, command_type, event_id, target_ticks / PTS_HZ, pts_time,
-            pts_adjustment,
+            pts_adjustment_ticks,
             "n/a" if time_to_event_ms is None else f"{time_to_event_ms:.1f}ms",
             signal_verdict,
             "; ".join(segmentation_summary))
