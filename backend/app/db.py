@@ -70,6 +70,7 @@ CREATE TABLE IF NOT EXISTS markers (
     preroll_verdict TEXT,
     signal_verdict TEXT,
     gop_verdict TEXT,
+    near_miss_ms REAL,
     wallclock TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_markers_job ON markers(job_id, id);
@@ -173,6 +174,9 @@ class Database:
         marker_cols = {row[1] for row in self._conn.execute("PRAGMA table_info(markers)").fetchall()}
         if "gop_verdict" not in marker_cols:
             self._conn.execute("ALTER TABLE markers ADD COLUMN gop_verdict TEXT")
+            self._conn.commit()
+        if "near_miss_ms" not in marker_cols:
+            self._conn.execute("ALTER TABLE markers ADD COLUMN near_miss_ms REAL")
             self._conn.commit()
 
     # -- jobs -------------------------------------------------------------
@@ -336,7 +340,8 @@ class Database:
                 "target_pts_s, raw_pts_time_s, pts_adjustment_ticks, idr_pts_s, delta_ms, verdict, "
                 "codec, au_kind, segmentation_summary, snapshot_path, pre_frame_snapshot_paths, "
                 "time_to_event_ms, actual_preroll_ms, preroll_delta_ms, preroll_verdict, "
-                "signal_verdict, gop_verdict, wallclock) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                "signal_verdict, gop_verdict, near_miss_ms, wallclock) "
+                "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 (job_id, record.get("cue_seq"),
                  None if record.get("event_id") is None else str(record.get("event_id")),
                  record.get("command_type"),
@@ -349,7 +354,8 @@ class Database:
                  json.dumps(record.get("pre_frame_snapshot_paths")),
                  record.get("time_to_event_ms"), record.get("actual_preroll_ms"),
                  record.get("preroll_delta_ms"), record.get("preroll_verdict"),
-                 record.get("signal_verdict"), record.get("gop_verdict"), record.get("wallclock")),
+                 record.get("signal_verdict"), record.get("gop_verdict"),
+                 record.get("near_miss_ms"), record.get("wallclock")),
             )
             self._conn.commit()
             return cur.lastrowid

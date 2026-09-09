@@ -1531,6 +1531,139 @@ def test_flush_pending_as_missed():
         probe.close()
 
 
+def test_near_miss_diagnostic(tmp_dir):
+    """Verify the near_miss_ms / closest_rejected_diff_ms diagnostic: when a
+    cue is eventually reported MISSED, but _match_idr() saw an IDR for it
+    that fell outside the accepted -max_early_ms/+tolerance_ms window along
+    the way, that candidate's signed offset should ride along as its own
+    near_miss_ms field and be folded into the verdict text -- distinguishing
+    "an IDR WAS nearby, just too early/late to match" from a genuine "no IDR
+    anywhere close" MISSED (the ambiguity a customer hit comparing an
+    incoming feed, which sometimes drops SCTE-35 events, against its
+    packaged/outgoing counterpart)."""
+    import json as _json
+    import os as _os
+
+    json_out_path = _os.path.join(tmp_dir, "near_miss.jsonl")
+
+    class Args:
+        program = None
+        pid_video = None
+        pid_scte35 = None
+        codec = "h264"
+        tolerance_ms = 6000.0
+        max_early_ms = 50.0
+        timeout_s = 12.0
+        ok_threshold_ms = 41.0
+        include_cra = False
+        verbose = False
+        csv_out = None
+        json_out = json_out_path
+        scte35_out = None
+        scte35_log_file = None
+        snapshot_dir = None
+        snapshot_all_idr = False
+        pre_frames = 0
+        au_buffer_size = None
+        ts_dump_dir = None
+        ts_dump_window = 60.0
+        ts_dump_all = False
+        ts_dump_no_preroll = False
+        ts_dump_max_files = None
+
+    def _make_cue(pts_time, event_id):
+        SpliceInsert = type("SpliceInsert", (), {})
+        cmd = SpliceInsert()
+        cmd.pts_time = pts_time
+        cmd.splice_event_id = event_id
+        cmd.out_of_network_indicator = True
+        info = types.SimpleNamespace(pts_adjustment=0)
+        return types.SimpleNamespace(command=cmd, info_section=info)
+
+    def _read_last_json_row():
+        with open(json_out_path) as f:
+            lines = [_json.loads(ln) for ln in f if ln.strip()]
+        return lines[-1]
+
+    probe = mod.Probe(Args())
+    probe.last_video_pts_ticks = int(round(1000.0 * mod.PTS_HZ))
+
+    # -- Case A: a "too late" candidate is seen (6.5s after target, outside
+    # the 6.0s tolerance_ms window), then the cue times out with nothing
+    # else arriving -- near_miss_ms must carry the +6500ms offset and the
+    # verdict text must say "too late". --
+    probe._register_cue(_make_cue(2000.0, 1), seq=1)
+    entry_a = probe.pending[-1]
+    late_idr_ticks = (entry_a["target_ticks"] + int(round(6.5 * mod.PTS_HZ))) % mod.PTS_MAX
+    probe._match_idr(late_idr_ticks, "idr")  # outside window -> rejected, not matched
+    assert len(probe.pending) == 1, "the out-of-window IDR must not consume the pending cue"
+    assert abs(entry_a["closest_rejected_diff_ms"] - 6500.0) < 1.0, entry_a
+    entry_a["deadline"] = 0  # force immediate timeout on the next sweep
+    unrelated_ticks = int(round(9999.0 * mod.PTS_HZ)) % mod.PTS_MAX
+    probe._match_idr(unrelated_ticks, "idr")  # drives the timeout-sweep path in _match_idr
+    row_a = _read_last_json_row()
+    assert row_a["cue_seq"] == 1
+    assert abs(row_a["near_miss_ms"] - 6500.0) < 1.0, row_a
+    assert row_a["verdict"] == (
+        "MISSED (no IDR near target PTS within timeout -- nearest IDR seen "
+        "was 6500ms too late to match, outside the accepted window)"
+    ), row_a
+    print("OK: a too-late rejected IDR candidate is surfaced as near_miss_ms "
+          "and folded into the MISSED verdict text")
+
+    # -- Case B: a "too early" candidate (100ms before target, outside the
+    # 50ms max_early_ms window) -- near_miss_ms must be the signed NEGATIVE
+    # offset and the text must say "too early". --
+    probe._register_cue(_make_cue(3000.0, 2), seq=2)
+    entry_b = probe.pending[-1]
+    early_idr_ticks = (entry_b["target_ticks"] - int(round(0.1 * mod.PTS_HZ))) % mod.PTS_MAX
+    probe._match_idr(early_idr_ticks, "idr")
+    assert len(probe.pending) == 1
+    assert entry_b["closest_rejected_diff_ms"] < 0, entry_b
+    assert abs(entry_b["closest_rejected_diff_ms"] - (-100.0)) < 1.0, entry_b
+    entry_b["deadline"] = 0
+    probe._match_idr(unrelated_ticks, "idr")
+    row_b = _read_last_json_row()
+    assert row_b["cue_seq"] == 2
+    assert abs(row_b["near_miss_ms"] - (-100.0)) < 1.0, row_b
+    assert "100ms too early to match" in row_b["verdict"], row_b
+    print("OK: a too-early rejected IDR candidate is surfaced as a negative "
+          "near_miss_ms and folded into the MISSED verdict text")
+
+    # -- Case C: regression guard -- a genuine MISSED with NO rejected
+    # candidate ever seen must keep the original, unmodified verdict text
+    # and near_miss_ms must stay None (matches the exact-string assertions
+    # in test_flush_pending_as_missed()). --
+    probe._register_cue(_make_cue(4000.0, 3), seq=3)
+    entry_c = probe.pending[-1]
+    entry_c["deadline"] = 0
+    probe._match_idr(unrelated_ticks, "idr")
+    row_c = _read_last_json_row()
+    assert row_c["cue_seq"] == 3
+    assert row_c["near_miss_ms"] is None, row_c
+    assert row_c["verdict"] == "MISSED (no IDR near target PTS within timeout)", row_c
+    print("OK: a MISSED cue with no rejected near-candidate keeps the "
+          "original verdict text unchanged and near_miss_ms stays None")
+
+    # -- Case D: a genuine match must never carry a near_miss_ms, even if an
+    # earlier candidate had been rejected for that same cue along the way. --
+    probe._register_cue(_make_cue(5000.0, 4), seq=4)
+    entry_d = probe.pending[-1]
+    stale_idr_ticks = (entry_d["target_ticks"] - int(round(0.1 * mod.PTS_HZ))) % mod.PTS_MAX
+    probe._match_idr(stale_idr_ticks, "idr")  # rejected (too early), recorded on entry_d
+    assert entry_d["closest_rejected_diff_ms"] is not None
+    good_idr_ticks = (entry_d["target_ticks"] + int(round(0.02 * mod.PTS_HZ))) % mod.PTS_MAX
+    probe._match_idr(good_idr_ticks, "idr")  # matches this time
+    row_d = _read_last_json_row()
+    assert row_d["cue_seq"] == 4
+    assert row_d["verdict"] == "OK", row_d
+    assert row_d["near_miss_ms"] is None, row_d
+    print("OK: near_miss_ms is None for an actual match, even if a rejected "
+          "candidate had been seen earlier for that same cue")
+
+    probe.close()
+
+
 def test_version_string():
     """Regression guard: __version__ must exist and be a plain, non-empty
     string (used by --version and logged at startup, and stamped into the
@@ -1565,6 +1698,8 @@ if __name__ == "__main__":
         test_time_to_event_and_actual_preroll(tmp_dir)
     with tempfile.TemporaryDirectory() as tmp_dir:
         test_gop_verdict(tmp_dir)
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        test_near_miss_diagnostic(tmp_dir)
     with tempfile.TemporaryDirectory() as tmp_dir:
         test_signal_verdict_min_time_to_event(tmp_dir)
     test_validate_ipv4_literal()

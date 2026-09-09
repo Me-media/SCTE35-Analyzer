@@ -57,7 +57,7 @@ MARKER_CSV_FIELDS = [
     "delta_ms", "verdict", "codec", "au_kind", "segmentation_summary",
     "snapshot_path", "pre_frame_snapshot_paths", "time_to_event_ms",
     "actual_preroll_ms", "preroll_delta_ms", "preroll_verdict", "signal_verdict",
-    "gop_verdict",
+    "gop_verdict", "near_miss_ms",
 ]
 
 

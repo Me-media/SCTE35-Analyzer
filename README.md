@@ -42,6 +42,16 @@ version history.
   table and the multi-stream comparison view, and included in CSV/JSON
   exports. Requires a GOP sample to have landed (`video_info`, on by
   default, refreshed every ~20s) — reported as `N/A` until then.
+- **`near_miss_ms`** — for a `MISSED` marker, says whether an IDR was
+  actually seen anywhere near the cue's target PTS but just fell outside
+  the accepted matching window (`--tolerance-ms`/`--max-early-ms`), versus
+  nothing being nearby at all. Useful when comparing an incoming feed
+  against its packaged/outgoing counterpart and some SCTE-35 events appear
+  to go missing on the incoming side: a candidate IDR that was, say, 340ms
+  too late to match points at tolerance/jitter, not a genuinely dropped
+  event. Folded into the `MISSED` verdict text and available as its own
+  field in CSV/JSON exports; hover the verdict badge in the GUI to see it
+  for a specific marker.
 - **JPEG snapshot** of the matched IDR frame per marker (and optionally N
   frames before it, to see the actual transition) — see immediately
   whether the cut was clean, black, or corrupted instead of trusting the

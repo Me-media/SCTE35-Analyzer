@@ -91,6 +91,13 @@ export interface Marker {
   preroll_verdict: string | null;
   signal_verdict: string | null;
   gop_verdict: string | null;
+  // Set only for a MISSED cue where an IDR was seen but fell outside the
+  // accepted matching window (-max-early-ms/+tolerance-ms) -- the closest
+  // such candidate's signed offset in ms (positive = late, negative =
+  // early). None for every non-MISSED verdict, and for a genuine MISSED
+  // with no rejected candidate ever seen. See probe.py's module docstring,
+  // item 10, and the same figure folded into `verdict`'s own text.
+  near_miss_ms: number | null;
   wallclock: string | null;
 }
 

@@ -2,7 +2,7 @@ import { Fragment, useMemo, useState } from "react";
 import type { CueSnapshot, Marker, Segment } from "../api/types";
 import { basename, api } from "../api/client";
 import { formatLocal, localZoneName } from "../lib/time";
-import Badge, { verdictExplanation, verdictVariant } from "./Badge";
+import Badge, { verdictTooltip, verdictVariant } from "./Badge";
 
 const CUE_SNAPSHOT_LABELS: Record<CueSnapshot["tag"], string> = {
   time_to_event_cue_arrival: "Time-to-event: frame on air when the cue arrived",
@@ -122,7 +122,7 @@ export default function MarkerTable({
                     <Badge
                       text={m.verdict ?? "–"}
                       variant={verdictVariant(m.verdict)}
-                      title={verdictExplanation("verdict", m.verdict)}
+                      title={verdictTooltip("verdict", m)}
                     />
                   </td>
                   <td className="px-3 py-2">
@@ -130,7 +130,7 @@ export default function MarkerTable({
                       <Badge
                         text={m.gop_verdict}
                         variant={verdictVariant(m.gop_verdict)}
-                        title={verdictExplanation("gop_verdict", m.gop_verdict)}
+                        title={verdictTooltip("gop_verdict", m)}
                       />
                     )}
                   </td>
@@ -139,7 +139,7 @@ export default function MarkerTable({
                       <Badge
                         text={m.preroll_verdict}
                         variant={verdictVariant(m.preroll_verdict)}
-                        title={verdictExplanation("preroll_verdict", m.preroll_verdict)}
+                        title={verdictTooltip("preroll_verdict", m)}
                       />
                     )}
                   </td>
@@ -148,7 +148,7 @@ export default function MarkerTable({
                       <Badge
                         text={m.signal_verdict}
                         variant={verdictVariant(m.signal_verdict)}
-                        title={verdictExplanation("signal_verdict", m.signal_verdict)}
+                        title={verdictTooltip("signal_verdict", m)}
                       />
                     )}
                   </td>

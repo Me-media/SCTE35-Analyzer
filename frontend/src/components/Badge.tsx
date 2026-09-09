@@ -1,4 +1,4 @@
-import type { JobStatus } from "../api/types";
+import type { JobStatus, Marker } from "../api/types";
 
 type Variant = "ok" | "warn" | "bad" | "missed" | "neutral";
 
@@ -78,6 +78,67 @@ export function verdictExplanation(field: VerdictField, verdict: string | null |
     return undefined;
   }
   return undefined;
+}
+
+function fmtMsValue(v: number | null | undefined): string {
+  if (v === null || v === undefined) return "n/a";
+  const sign = v > 0 ? "+" : "";
+  return `${sign}${v.toFixed(1)}ms`;
+}
+
+/** The concrete number(s) behind a specific verdict badge for a specific
+ * marker row -- e.g. "delta_ms: +20.0ms" -- appended as a second line
+ * under verdictExplanation()'s generic category text (see verdictTooltip
+ * below), so hovering a badge answers both "what does this verdict mean"
+ * and "why did THIS row get it" without having to cross-reference other
+ * columns. Field-aware, same as verdictExplanation, since the value that
+ * actually explains a verdict differs per field:
+ *   verdict          -> delta_ms, or -- for MISSED -- the near_miss_ms
+ *                        diagnostic (was a rejected IDR candidate seen
+ *                        nearby, and how far off was it?)
+ *   gop_verdict       -> delta_ms (compared against the sampled GOP
+ *                        duration to produce FORCED/GOP_WAIT/UNCLEAR)
+ *   preroll_verdict   -> the declared/actual/delta trio it's computed from
+ *   signal_verdict    -> time_to_event_ms (the declared lead time it's
+ *                        judged against the minimum advance-notice figure)
+ */
+export function verdictValueLine(field: VerdictField, marker: Marker): string | undefined {
+  if (field === "verdict") {
+    if (marker.verdict && marker.verdict.startsWith("MISSED")) {
+      if (marker.near_miss_ms !== null && marker.near_miss_ms !== undefined) {
+        const direction = marker.near_miss_ms > 0 ? "late" : "early";
+        return `Nearest rejected IDR candidate: ${fmtMsValue(marker.near_miss_ms)} (too ${direction} to match)`;
+      }
+      return "No IDR was seen anywhere near the target PTS while this cue was pending.";
+    }
+    return `delta_ms: ${fmtMsValue(marker.delta_ms)}`;
+  }
+  if (field === "gop_verdict") {
+    return `delta_ms: ${fmtMsValue(marker.delta_ms)}`;
+  }
+  if (field === "preroll_verdict") {
+    return (
+      `declared time_to_event_ms: ${fmtMsValue(marker.time_to_event_ms)}  ·  ` +
+      `actual_preroll_ms: ${fmtMsValue(marker.actual_preroll_ms)}  ·  ` +
+      `preroll_delta_ms: ${fmtMsValue(marker.preroll_delta_ms)}`
+    );
+  }
+  if (field === "signal_verdict") {
+    return `time_to_event_ms: ${fmtMsValue(marker.time_to_event_ms)}`;
+  }
+  return undefined;
+}
+
+/** Full tooltip text for a verdict badge: verdictExplanation()'s generic
+ * "what this category means" followed by verdictValueLine()'s concrete
+ * "why THIS row got it", on its own line (native `title` tooltips render
+ * \n as a line break). Use this instead of calling verdictExplanation
+ * directly wherever a Marker is on hand. */
+export function verdictTooltip(field: VerdictField, marker: Marker): string | undefined {
+  const explanation = verdictExplanation(field, marker[field]);
+  if (!explanation) return undefined;
+  const valueLine = verdictValueLine(field, marker);
+  return valueLine ? `${explanation}\n\n${valueLine}` : explanation;
 }
 
 export function jobStatusVariant(status: JobStatus): Variant {

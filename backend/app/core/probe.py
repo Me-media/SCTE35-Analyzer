@@ -147,6 +147,28 @@ truth in a compliance report):
      behavior from timing statistics, it does not inspect the encoder's
      own keyframe-forcing decision directly.
 
+  10. near_miss_ms / closest_rejected_diff_ms: a MISSED verdict on its own
+      doesn't say whether the probe saw nothing IDR-like anywhere near the
+      cue's target PTS, or whether it saw a candidate IDR that just fell
+      outside the accepted matching window (-max_early_s .. +match_window_s,
+      see _match_idr) -- an important distinction when comparing an
+      incoming feed against its packaged/outgoing counterpart, since
+      "SCTE-35 sometimes goes missing on the incoming side" can mean either
+      "the encoder never gave us a usable IDR" (a real gap) or "an IDR
+      arrived, just too early/late to count" (a tolerance/jitter problem,
+      not a lost event). _match_idr() now tracks, for every still-pending
+      cue, the closest out-of-window IDR it has seen so far
+      (closest_rejected_diff_ms on the pending entry -- signed ms, positive
+      = the candidate arrived late, negative = early); if the cue is
+      eventually reported MISSED, that figure both extends the verdict
+      string (e.g. "MISSED (no IDR near target PTS within timeout -- nearest
+      IDR seen was 340ms too late to match, outside the accepted window)")
+      and rides along unchanged as its own near_miss_ms field in the
+      CSV/JSON/DB/GUI schema (None when no rejected candidate was ever seen
+      for that cue, including for every non-MISSED verdict). Purely a
+      diagnostic on top of the existing --tolerance-ms/--max-early-ms
+      matching logic -- it does not change what counts as a match.
+
 Usage examples:
   # Raw UDP multicast, auto-detect video codec + PIDs from PAT/PMT
   sudo python3 scte35_idr_diff.py --addr 239.1.1.1 --port 5000
@@ -1153,7 +1175,7 @@ class Probe:
                     "idr_pts_s", "delta_ms", "verdict", "codec", "au_kind",
                     "segmentation_summary", "snapshot_path", "pre_frame_snapshot_paths",
                     "time_to_event_ms", "actual_preroll_ms", "preroll_delta_ms", "preroll_verdict",
-                    "signal_verdict", "gop_verdict",
+                    "signal_verdict", "gop_verdict", "near_miss_ms",
                 ])
         if args.json_out:
             self.json_out = open(args.json_out, "a")
@@ -1374,6 +1396,14 @@ class Probe:
             "register_monotonic": now,
             "time_to_event_ms": time_to_event_ms,
             "signal_verdict": signal_verdict,
+            # Updated by _match_idr() below every time an IDR is seen but
+            # rejected for THIS entry (outside the accepted -max_early_s /
+            # +match_window_s window) -- the closest such candidate's
+            # signed offset in ms (positive = late, negative = early), so
+            # an eventual MISSED verdict can say WHY: a genuine "nothing
+            # nearby at all" vs. "something WAS nearby, just outside the
+            # accepted window". None until/unless such a candidate is seen.
+            "closest_rejected_diff_ms": None,
         }
         self.pending.append(entry)
 
@@ -1835,6 +1865,19 @@ class Probe:
             if -self.max_early_s <= diff_s <= self.match_window_s:
                 if best is None or abs(diff_s) < abs(best_diff):
                     best, best_diff = entry, diff_s
+            else:
+                # Outside the acceptance window -- not a match candidate, but
+                # track the closest such IDR seen while this cue was still
+                # pending purely as a MISSED-verdict diagnostic (see _emit):
+                # lets us tell "an IDR WAS nearby, just too early/late to
+                # match" apart from "nothing at all was anywhere close",
+                # which is exactly the ambiguity that makes a MISSED event
+                # hard to triage by eye when comparing an incoming feed
+                # against its packaged/outgoing counterpart.
+                diff_ms = diff_s * 1000.0
+                prev = entry.get("closest_rejected_diff_ms")
+                if prev is None or abs(diff_ms) < abs(prev):
+                    entry["closest_rejected_diff_ms"] = diff_ms
         if best is not None:
             self.pending.remove(best)
             self._emit(best, idr_ticks=idr_ticks, kind=kind, missed=False)
@@ -1860,9 +1903,27 @@ class Probe:
         wallclock = time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime())
         if missed:
             delta_ms = None
-            verdict = ("MISSED (input ended before a matching IDR was found)"
-                       if miss_reason == "eof" else
-                       "MISSED (no IDR near target PTS within timeout)")
+            base_reason = ("input ended before a matching IDR was found"
+                            if miss_reason == "eof" else
+                            "no IDR near target PTS within timeout")
+            # If _match_idr() ever saw an IDR for this cue that fell outside
+            # the accepted window, say so and how far off it was -- turns a
+            # bare "MISSED" into an actionable diagnostic: a candidate that
+            # was e.g. 340ms too late to match (encoder/GOP jitter pushing
+            # it past --tolerance-ms) reads very differently from no nearby
+            # IDR existing at all (an encoder that dropped/ignored the cue
+            # entirely). See closest_rejected_diff_ms in _register_cue/
+            # _match_idr. Appended rather than replacing the base text so
+            # existing exact-string assertions on the no-candidate case
+            # (closest_rejected_diff_ms stays None) are unaffected.
+            closest_rejected_diff_ms = entry.get("closest_rejected_diff_ms")
+            if closest_rejected_diff_ms is not None:
+                direction = "late" if closest_rejected_diff_ms > 0 else "early"
+                base_reason += (
+                    f" -- nearest IDR seen was {abs(closest_rejected_diff_ms):.0f}ms too "
+                    f"{direction} to match, outside the accepted window"
+                )
+            verdict = f"MISSED ({base_reason})"
             idr_pts_s = None
         else:
             delta_ms = pts_diff_seconds(idr_ticks, entry["target_ticks"]) * 1000.0
@@ -1957,6 +2018,14 @@ class Probe:
             else:
                 gop_verdict = "UNCLEAR"
 
+        # near_miss_ms: surfaces the same closest_rejected_diff_ms diagnostic
+        # used to build the MISSED verdict text above as its own machine-
+        # readable field (CSV/JSON/DB/GUI), rather than forcing every
+        # consumer to parse it back out of the verdict string. Only ever
+        # set for a MISSED entry that had a rejected near-candidate; None
+        # otherwise (including for a genuine match, where it's moot).
+        near_miss_ms = entry.get("closest_rejected_diff_ms") if missed else None
+
         line = (f"[{wallclock}] event_id={entry['event_id']} "
                 f"type={entry['command_type']} oon={entry['out_of_network']} "
                 f"target_pts={target_pts_s:.6f}s "
@@ -1990,6 +2059,7 @@ class Probe:
                 preroll_verdict,
                 signal_verdict,
                 gop_verdict,
+                "" if near_miss_ms is None else f"{near_miss_ms:.1f}",
             ])
             self.csv_file.flush()
 
@@ -2018,6 +2088,7 @@ class Probe:
             "preroll_verdict": preroll_verdict,
             "signal_verdict": signal_verdict,
             "gop_verdict": gop_verdict,
+            "near_miss_ms": near_miss_ms,
             # cross-reference with --scte35-out/the scte35_cue event using
             # cue_seq for the complete raw SCTE-35 structure (all
             # descriptor fields).

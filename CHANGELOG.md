@@ -42,12 +42,31 @@ against this file.
   place for existing job databases).
 
 ### Added
+- **`near_miss_ms`**: a new diagnostic for a `MISSED` marker, answering "was
+  an IDR actually seen anywhere near this cue, just too early/late to
+  count — or was nothing nearby at all?" On an incoming feed that sometimes
+  drops SCTE-35 events compared to its packaged/outgoing counterpart, that
+  distinction matters: a candidate IDR that arrived, say, 340ms too late to
+  fit inside `--tolerance-ms`/`--max-early-ms` points at a
+  tolerance/jitter problem, not a genuinely lost event. Whenever the probe
+  sees an IDR outside the accepted matching window for a still-pending cue,
+  it now remembers the closest such candidate's signed offset (positive =
+  late, negative = early); if that cue is later reported `MISSED`, the
+  figure both extends the verdict text (e.g. `MISSED (no IDR near target
+  PTS within timeout -- nearest IDR seen was 340ms too late to match,
+  outside the accepted window)`) and rides along as its own `near_miss_ms`
+  field in CSV/JSON exports and the `markers` DB table (migrated in place
+  for existing job databases). `None`/empty whenever no such candidate was
+  ever seen, and for every non-`MISSED` verdict.
 - **Hover tooltips on every verdict badge** (`verdict`, `gop_verdict`,
   `preroll_verdict`, `signal_verdict`) in the marker table and the
   multi-stream comparison view — explains in plain language what that
   specific value means (e.g. what `GOP_WAIT` or `PREROLL_SHORT` actually
   indicates) without having to go dig through the README or the module
-  docstring.
+  docstring, **and now also shows the concrete number(s) behind that
+  specific row's verdict** on a second line (e.g. `delta_ms: +20.0ms`, or
+  the `near_miss_ms` figure above for a `MISSED` row) — not just what the
+  category means in general, but why this particular marker got it.
 - **Click the version number to view the changelog**, right in the GUI.
   New `GET /api/changelog` serves the exact `CHANGELOG.md` that shipped
   with the running build (copied into the Docker image, see

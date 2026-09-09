@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { api, connectJobSocket } from "../api/client";
 import type { Job, Marker, WsMessage } from "../api/types";
-import Badge, { jobStatusVariant, verdictExplanation, verdictVariant } from "./Badge";
+import Badge, { jobStatusVariant, verdictTooltip, verdictVariant } from "./Badge";
 import CompareChart from "./CompareChart";
 
 const COLORS = ["#38bdf8", "#f472b6", "#facc15", "#4ade80", "#a78bfa", "#fb923c", "#2dd4bf", "#f87171"];
@@ -266,7 +266,7 @@ export default function CompareView({
                       <Badge
                         text={m.verdict ?? "–"}
                         variant={verdictVariant(m.verdict)}
-                        title={verdictExplanation("verdict", m.verdict)}
+                        title={verdictTooltip("verdict", m)}
                       />
                     </td>
                     <td className="px-3 py-2">
@@ -274,7 +274,7 @@ export default function CompareView({
                         <Badge
                           text={m.gop_verdict}
                           variant={verdictVariant(m.gop_verdict)}
-                          title={verdictExplanation("gop_verdict", m.gop_verdict)}
+                          title={verdictTooltip("gop_verdict", m)}
                         />
                       )}
                     </td>
@@ -283,7 +283,7 @@ export default function CompareView({
                         <Badge
                           text={m.preroll_verdict}
                           variant={verdictVariant(m.preroll_verdict)}
-                          title={verdictExplanation("preroll_verdict", m.preroll_verdict)}
+                          title={verdictTooltip("preroll_verdict", m)}
                         />
                       )}
                     </td>
@@ -292,7 +292,7 @@ export default function CompareView({
                         <Badge
                           text={m.signal_verdict}
                           variant={verdictVariant(m.signal_verdict)}
-                          title={verdictExplanation("signal_verdict", m.signal_verdict)}
+                          title={verdictTooltip("signal_verdict", m)}
                         />
                       )}
                     </td>
