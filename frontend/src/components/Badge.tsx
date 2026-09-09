@@ -17,6 +17,9 @@ export function verdictVariant(verdict: string | null | undefined): Variant {
   if (verdict.startsWith("REVIEW")) return "warn";
   if (verdict.startsWith("MISSED")) return "missed";
   if (verdict.startsWith("SIGNAL_LATE") || verdict.startsWith("PREROLL_SHORT")) return "warn";
+  if (verdict.startsWith("GOP_WAIT")) return "warn";
+  if (verdict.startsWith("FORCED")) return "ok";
+  if (verdict.startsWith("UNCLEAR")) return "neutral";
   if (verdict.startsWith("RETRANSMISSION") || verdict === "N/A") return "neutral";
   return "neutral";
 }

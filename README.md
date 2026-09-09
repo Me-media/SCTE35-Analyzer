@@ -15,7 +15,7 @@ insertion. See the original project's README (linked above) for the full
 technical background on the measurement itself; this document focuses on
 the GUI/operations side.
 
-Current version: **0.10.1** — shown in the bottom-right corner of the GUI
+Current version: **0.11.0** — shown in the bottom-right corner of the GUI
 and via `GET /api/version` (a quick way to confirm a deploy actually
 picked up new code). See [CHANGELOG.md](./CHANGELOG.md) for the full
 version history.
@@ -32,6 +32,16 @@ version history.
   pushed to the browser over WebSocket as the engine finds them. The chart
   zooms to quick presets (1mo/1w/1d/12h/6h/3h/1h) anchored to the most
   recent marker, or a manually picked from/to time range.
+- **`gop_verdict`** — a per-marker diagnostic for "why do ads start later
+  than they should": compares `delta_ms` against the stream's own sampled
+  GOP duration to flag whether the encoder likely forced a real keyframe
+  at the splice point (`FORCED`) or just let the packager fall through to
+  its next naturally-scheduled IDR instead (`GOP_WAIT` — the actual root
+  cause to chase, since a downstream splicer can only cut on an IDR that
+  exists). Shown as its own column/badge next to Verdict in the marker
+  table and the multi-stream comparison view, and included in CSV/JSON
+  exports. Requires a GOP sample to have landed (`video_info`, on by
+  default, refreshed every ~20s) — reported as `N/A` until then.
 - **JPEG snapshot** of the matched IDR frame per marker (and optionally N
   frames before it, to see the actual transition) — see immediately
   whether the cut was clean, black, or corrupted instead of trusting the

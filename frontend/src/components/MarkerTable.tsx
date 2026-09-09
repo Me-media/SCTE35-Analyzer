@@ -85,6 +85,12 @@ export default function MarkerTable({
             <th className="px-3 py-2">IDR PTS</th>
             <th className="px-3 py-2">Delta</th>
             <th className="px-3 py-2">Verdict</th>
+            <th
+              className="px-3 py-2"
+              title="Heuristic: did the encoder likely force a real keyframe at the splice point (FORCED), or did it just fall through to its next natural GOP boundary instead (GOP_WAIT, the usual cause of ads starting later than the cue's own PTS)? Requires --video-info-enabled; N/A until a GOP sample has landed."
+            >
+              GOP
+            </th>
             <th className="px-3 py-2">Pre-roll</th>
             <th className="px-3 py-2">Signal</th>
             <th className="px-3 py-2">Snapshot</th>
@@ -114,6 +120,11 @@ export default function MarkerTable({
                   <td className="px-3 py-2 mono text-xs">{fmtMs(m.delta_ms)}</td>
                   <td className="px-3 py-2">
                     <Badge text={m.verdict ?? "–"} variant={verdictVariant(m.verdict)} />
+                  </td>
+                  <td className="px-3 py-2">
+                    {m.gop_verdict && m.gop_verdict !== "N/A" && (
+                      <Badge text={m.gop_verdict} variant={verdictVariant(m.gop_verdict)} />
+                    )}
                   </td>
                   <td className="px-3 py-2">
                     {m.preroll_verdict && m.preroll_verdict !== "N/A" && (
@@ -159,7 +170,7 @@ export default function MarkerTable({
                 </tr>
                 {isOpen && (
                   <tr className="bg-slate-900/60">
-                    <td colSpan={12} className="px-3 py-3">
+                    <td colSpan={13} className="px-3 py-3">
                       <MarkerDetail
                         jobId={jobId}
                         marker={m}

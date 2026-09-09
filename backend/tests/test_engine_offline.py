@@ -997,6 +997,130 @@ def test_time_to_event_and_actual_preroll(tmp_dir):
     probe.close()
 
 
+def test_gop_verdict(tmp_dir):
+    """Verify gop_verdict: the diagnostic for "does delta_ms look like a
+    genuinely forced keyframe at the splice point, or like the encoder just
+    fell through to its next natural GOP boundary instead" -- added after a
+    customer asked how to actually measure "ads start later than they
+    should" (the answer: this, not actual_preroll_ms, which is a wall-clock
+    probe-side figure unrelated to what ended up in the encoded stream)."""
+    import json as _json
+    import os as _os
+
+    json_out_path = _os.path.join(tmp_dir, "gop_verdict.jsonl")
+
+    class Args:
+        program = None
+        pid_video = None
+        pid_scte35 = None
+        codec = "h264"
+        tolerance_ms = 6000.0
+        max_early_ms = 50.0
+        timeout_s = 12.0
+        ok_threshold_ms = 41.0
+        include_cra = False
+        verbose = False
+        csv_out = None
+        json_out = json_out_path
+        scte35_out = None
+        scte35_log_file = None
+        snapshot_dir = None
+        snapshot_all_idr = False
+        pre_frames = 0
+        au_buffer_size = None
+        ts_dump_dir = None
+        ts_dump_window = 60.0
+        ts_dump_all = False
+        ts_dump_no_preroll = False
+        ts_dump_max_files = None
+
+    def _make_cue(pts_time, event_id):
+        SpliceInsert = type("SpliceInsert", (), {})
+        cmd = SpliceInsert()
+        cmd.pts_time = pts_time
+        cmd.splice_event_id = event_id
+        cmd.out_of_network_indicator = True
+        info = types.SimpleNamespace(pts_adjustment=0)
+        return types.SimpleNamespace(command=cmd, info_section=info)
+
+    def _read_last_json_row():
+        with open(json_out_path) as f:
+            lines = [_json.loads(ln) for ln in f if ln.strip()]
+        return lines[-1]
+
+    probe = mod.Probe(Args())
+    probe.last_video_pts_ticks = int(round(1000.0 * mod.PTS_HZ))
+
+    # -- Case A: no GOP sample has landed yet (_last_gop_duration_ms is None,
+    # its default -- see __init__) -> gop_verdict must be N/A, never a
+    # guess, regardless of how small or large delta_ms is. --
+    assert probe._last_gop_duration_ms is None
+    probe._register_cue(_make_cue(1001.0, 1), seq=1)
+    idr_ticks_a = int(round(1001.02 * mod.PTS_HZ)) % mod.PTS_MAX  # +20ms
+    probe._match_idr(idr_ticks_a, "idr")
+    row_a = _read_last_json_row()
+    assert row_a["gop_verdict"] == "N/A", row_a
+    print("OK: gop_verdict is N/A when no GOP sample has landed yet, "
+          "regardless of delta_ms")
+
+    # From here on, simulate a stream with a 2.0s GOP duration (as if
+    # avg_gop_length_frames / frame_rate_fps had just been sampled).
+    probe._last_gop_duration_ms = 2000.0
+
+    # -- Case B: delta_ms small (+20ms, already verdict=OK) -> looks like a
+    # genuinely forced keyframe at the splice point -> FORCED. --
+    probe._register_cue(_make_cue(1002.0, 2), seq=2)
+    idr_ticks_b = int(round(1002.02 * mod.PTS_HZ)) % mod.PTS_MAX  # +20ms
+    probe._match_idr(idr_ticks_b, "idr")
+    row_b = _read_last_json_row()
+    assert abs(row_b["delta_ms"] - 20.0) < 1e-6, row_b["delta_ms"]
+    assert row_b["gop_verdict"] == "FORCED", row_b
+    print("OK: a small delta_ms (already verdict=OK) is gop_verdict=FORCED "
+          "-- the encoder honored the splice point")
+
+    # -- Case C: delta_ms landing within tolerance of exactly 1x the GOP
+    # duration (2005ms, 5ms off 2000ms) -> the encoder most likely never
+    # forced a keyframe at all, and the packager just cut on its next
+    # naturally-scheduled IDR two seconds later -> GOP_WAIT. --
+    probe._register_cue(_make_cue(1003.0, 3), seq=3)
+    idr_ticks_c = int(round(1003.0 * mod.PTS_HZ)) % mod.PTS_MAX
+    idr_ticks_c = (idr_ticks_c + int(round(2.005 * mod.PTS_HZ))) % mod.PTS_MAX  # +2005ms
+    probe._match_idr(idr_ticks_c, "idr")
+    row_c = _read_last_json_row()
+    assert abs(row_c["delta_ms"] - 2005.0) < 1.0, row_c["delta_ms"]
+    assert row_c["gop_verdict"] == "GOP_WAIT", row_c
+    print("OK: delta_ms landing ~1 GOP duration late is gop_verdict=GOP_WAIT "
+          "-- the actual root cause of a systematically-late ad start")
+
+    # -- Case D: delta_ms fitting neither pattern (900ms: too big to be a
+    # forced keyframe within ok_threshold_ms, too far from any whole
+    # multiple of the 2000ms GOP duration to blame GOP cadence) -> UNCLEAR,
+    # rather than a false-confidence FORCED or GOP_WAIT label. --
+    probe._register_cue(_make_cue(1004.0, 4), seq=4)
+    idr_ticks_d = int(round(1004.0 * mod.PTS_HZ)) % mod.PTS_MAX
+    idr_ticks_d = (idr_ticks_d + int(round(0.9 * mod.PTS_HZ))) % mod.PTS_MAX  # +900ms
+    probe._match_idr(idr_ticks_d, "idr")
+    row_d = _read_last_json_row()
+    assert abs(row_d["delta_ms"] - 900.0) < 1.0, row_d["delta_ms"]
+    assert row_d["gop_verdict"] == "UNCLEAR", row_d
+    print("OK: delta_ms fitting neither the forced-keyframe nor the "
+          "GOP-cadence pattern is gop_verdict=UNCLEAR rather than a guess")
+
+    # -- Case E: a MISSED cue never got an IDR to measure delta_ms against
+    # at all -> gop_verdict must be N/A, same as preroll_verdict. --
+    probe._register_cue(_make_cue(2000.0, 5), seq=5)
+    entry_e = probe.pending[-1]
+    entry_e["deadline"] = 0  # force immediate timeout
+    unrelated_idr_ticks = int(round(9999.0 * mod.PTS_HZ)) % mod.PTS_MAX
+    probe._match_idr(unrelated_idr_ticks, "idr")  # drives the timeout-sweep path
+    row_e = _read_last_json_row()
+    assert row_e["cue_seq"] == 5
+    assert row_e["gop_verdict"] == "N/A", row_e
+    print("OK: a MISSED cue is gop_verdict=N/A, same as preroll_verdict")
+
+    probe.close()
+
+
 def test_signal_verdict_min_time_to_event(tmp_dir):
     """Verify signal_verdict / --min-time-to-event-ms: whether the FIRST
     transmission of a splice_event_id met SCTE-35's own apparent 4-second
@@ -1439,6 +1563,8 @@ if __name__ == "__main__":
         test_ts_dump_max_files_prunes_oldest(tmp_dir)
     with tempfile.TemporaryDirectory() as tmp_dir:
         test_time_to_event_and_actual_preroll(tmp_dir)
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        test_gop_verdict(tmp_dir)
     with tempfile.TemporaryDirectory() as tmp_dir:
         test_signal_verdict_min_time_to_event(tmp_dir)
     test_validate_ipv4_literal()

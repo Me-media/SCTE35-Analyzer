@@ -90,6 +90,7 @@ export interface Marker {
   preroll_delta_ms: number | null;
   preroll_verdict: string | null;
   signal_verdict: string | null;
+  gop_verdict: string | null;
   wallclock: string | null;
 }
 

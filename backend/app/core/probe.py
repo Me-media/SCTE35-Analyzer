@@ -121,6 +121,32 @@ truth in a compliance report):
      signal_verdict, CSV/JSON schema) works identically to live capture.
      See "File input mode" in the README.
 
+  9. gop_verdict: a downstream packager/splicer can only cut a clean
+     ad-break transition on an actual IDR -- it cannot invent a cut point
+     that doesn't exist in the encoded stream. So the question that
+     actually explains "ads start later than they should" is not
+     actual_preroll_ms (item 6, a wall-clock probe-side figure) but
+     whether the ENCODER forced a real IDR at (or very near) target_pts,
+     as opposed to just leaving its normal GOP cadence running and
+     letting the packager fall through to whatever IDR happened to come
+     next. gop_verdict distinguishes these by comparing delta_ms against
+     the stream's own average GOP duration (periodically resampled via
+     ffprobe -- see video_info/_sample_video_info, avg_gop_length_frames /
+     frame_rate_fps): FORCED (delta_ms is small -- already verdict=OK --
+     consistent with a genuine forced keyframe at the splice point, so any
+     remaining lateness is downstream of this probe, e.g. the
+     packager/ad-decisioning layer); GOP_WAIT (delta_ms lands within
+     ~20%/200ms of a whole multiple of the GOP duration -- the encoder
+     most likely never forced a keyframe at all, and the packager just cut
+     at its next naturally-scheduled IDR instead -- this IS the root cause
+     to chase for a systematically-late ad start); UNCLEAR (neither
+     pattern fits -- e.g. a variable-GOP encoder, or delta_ms too large/odd
+     to attribute to simple GOP cadence); N/A (a MISSED cue, or no GOP
+     sample has landed yet -- requires --video-info-enabled in the GUI, see
+     README). Heuristic, not a standards-defined figure: it infers encoder
+     behavior from timing statistics, it does not inspect the encoder's
+     own keyframe-forcing decision directly.
+
 Usage examples:
   # Raw UDP multicast, auto-detect video codec + PIDs from PAT/PMT
   sudo python3 scte35_idr_diff.py --addr 239.1.1.1 --port 5000
@@ -1089,6 +1115,13 @@ class Probe:
         self.video_info_enabled = (
             bool(getattr(args, "video_info_enabled", False)) and self._on_event is not None)
         self.video_info_interval_s = float(getattr(args, "video_info_interval_s", None) or 20.0)
+        # Updated by _sample_video_info() whenever it gets a usable
+        # frame_rate_fps + gop.avg_gop_length_frames pair -- read by _emit()
+        # to compute gop_verdict (see its own comment there). None until the
+        # first successful sample lands (or forever, if video_info is
+        # disabled/never manages a clean ffprobe read), in which case
+        # gop_verdict is reported as N/A rather than guessed at.
+        self._last_gop_duration_ms = None
         self._video_info_buffer = None
         self.video_info_thread = None
         self._video_info_stop = None
@@ -1120,7 +1153,7 @@ class Probe:
                     "idr_pts_s", "delta_ms", "verdict", "codec", "au_kind",
                     "segmentation_summary", "snapshot_path", "pre_frame_snapshot_paths",
                     "time_to_event_ms", "actual_preroll_ms", "preroll_delta_ms", "preroll_verdict",
-                    "signal_verdict",
+                    "signal_verdict", "gop_verdict",
                 ])
         if args.json_out:
             self.json_out = open(args.json_out, "a")
@@ -1895,6 +1928,35 @@ class Probe:
         # outcome in every output channel.
         signal_verdict = entry.get("signal_verdict", "N/A")
 
+        # -- gop_verdict: does this delta look like a genuinely forced
+        # keyframe at the splice point, or like the encoder just fell
+        # through to its next naturally-scheduled GOP boundary instead? A
+        # downstream splicer/packager can only cut on an IDR, so if the
+        # encoder isn't forcing one exactly at target_pts, delta_ms will
+        # cluster around whole multiples of the stream's own GOP duration
+        # (the periodically ffprobe-sampled avg_gop_length_frames / fps --
+        # see _sample_video_info) rather than around zero. This is the
+        # diagnostic for "ads start later than they should": a small
+        # delta_ms (already verdict=OK) means the splice point itself was
+        # honored, so any remaining lateness is downstream of this probe
+        # (packager/ad-decisioning); a delta_ms landing on ~1x/2x/3x the
+        # GOP duration means the encoder itself never gave the packager a
+        # clean cut point to work with, and that's the root cause to chase.
+        # Only evaluated for an actual match with delta_ms available --
+        # never meant to override `verdict` above, just to explain it.
+        if missed or delta_ms is None or not self._last_gop_duration_ms:
+            gop_verdict = "N/A"
+        else:
+            gop_ms = self._last_gop_duration_ms
+            n = round(delta_ms / gop_ms)
+            tolerance_ms = min(0.2 * gop_ms, 200.0)
+            if n >= 1 and abs(delta_ms - n * gop_ms) <= tolerance_ms:
+                gop_verdict = "GOP_WAIT"
+            elif abs(delta_ms) <= self.ok_threshold_ms:
+                gop_verdict = "FORCED"
+            else:
+                gop_verdict = "UNCLEAR"
+
         line = (f"[{wallclock}] event_id={entry['event_id']} "
                 f"type={entry['command_type']} oon={entry['out_of_network']} "
                 f"target_pts={target_pts_s:.6f}s "
@@ -1905,9 +1967,11 @@ class Probe:
                 + (f" pre_frames={len(pre_frame_paths)}" if pre_frame_paths else "")
                 + (f" time_to_event={'n/a' if time_to_event_ms is None else f'{time_to_event_ms:.1f}ms'}"
                    f" actual_preroll={'n/a' if actual_preroll_ms is None else f'{actual_preroll_ms:.1f}ms'}"
-                   f" preroll_verdict={preroll_verdict} signal_verdict={signal_verdict}"))
+                   f" preroll_verdict={preroll_verdict} signal_verdict={signal_verdict}"
+                   f" gop_verdict={gop_verdict}"))
         (log.warning if missed or (delta_ms is not None and abs(delta_ms) > self.ok_threshold_ms)
-         or preroll_verdict == "PREROLL_SHORT" or signal_verdict == "SIGNAL_LATE" else log.info)(line)
+         or preroll_verdict == "PREROLL_SHORT" or signal_verdict == "SIGNAL_LATE"
+         or gop_verdict == "GOP_WAIT" else log.info)(line)
 
         if self.csv_writer:
             self.csv_writer.writerow([
@@ -1925,6 +1989,7 @@ class Probe:
                 "" if preroll_delta_ms is None else f"{preroll_delta_ms:.1f}",
                 preroll_verdict,
                 signal_verdict,
+                gop_verdict,
             ])
             self.csv_file.flush()
 
@@ -1952,6 +2017,7 @@ class Probe:
             "preroll_delta_ms": preroll_delta_ms,
             "preroll_verdict": preroll_verdict,
             "signal_verdict": signal_verdict,
+            "gop_verdict": gop_verdict,
             # cross-reference with --scte35-out/the scte35_cue event using
             # cue_seq for the complete raw SCTE-35 structure (all
             # descriptor fields).
@@ -2118,6 +2184,10 @@ class Probe:
             except OSError:
                 pass
         if info:
+            fps = info.get("frame_rate_fps")
+            avg_gop_frames = (info.get("gop") or {}).get("avg_gop_length_frames")
+            if fps and avg_gop_frames:
+                self._last_gop_duration_ms = (avg_gop_frames / fps) * 1000.0
             self._emit_event("video_info", info)
 
     # -- TS packet dispatch ------------------------------------------------

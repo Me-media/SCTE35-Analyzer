@@ -8,6 +8,39 @@ the bottom-right corner of the GUI and via `GET /api/version` — check it
 after a deploy to confirm the new code actually landed, and compare
 against this file.
 
+## [0.11.0] - 2026-09-09
+
+### Added
+- **`gop_verdict`**: a new per-marker diagnostic answering "why do ads
+  start later than they should", as distinct from `actual_preroll_ms`
+  (which measures the probe's own wall-clock observation timing, not what
+  actually ended up in the encoded stream/manifest). A downstream
+  packager/splicer can only cut a clean ad-break transition on an actual
+  IDR — it cannot invent a cut point that doesn't exist — so the figure
+  that actually matters is whether the *encoder* forced a real keyframe at
+  (or very near) the cue's target PTS, or just left its normal GOP cadence
+  running and let the packager fall through to whatever IDR came next.
+  `gop_verdict` infers this by comparing `delta_ms` against the stream's
+  own periodically-sampled GOP duration (`video_info`'s
+  `avg_gop_length_frames` / `frame_rate_fps`, already collected every
+  ~20s):
+  - `FORCED` — `delta_ms` is small (already `verdict=OK`), consistent with
+    a genuine forced keyframe at the splice point. Any remaining lateness
+    is downstream of this probe (the packager or ad-decisioning layer).
+  - `GOP_WAIT` — `delta_ms` lands within ~20%/200ms of a whole multiple of
+    the GOP duration. The encoder most likely never forced a keyframe at
+    all — this is the actual root cause to chase for a systematically-late
+    ad start.
+  - `UNCLEAR` — neither pattern fits (e.g. a variable-GOP encoder).
+  - `N/A` — a MISSED cue, or no GOP sample has landed yet.
+
+  A heuristic, not a standards-defined figure — it infers encoder behavior
+  from timing statistics rather than inspecting the encoder's own
+  keyframe-forcing decision directly. Shown as its own column/badge next
+  to Verdict in the marker table and the multi-stream comparison view, and
+  included in CSV/JSON exports and the `markers` DB table (migrated in
+  place for existing job databases).
+
 ## [0.10.1] - 2026-09-08
 
 ### Fixed

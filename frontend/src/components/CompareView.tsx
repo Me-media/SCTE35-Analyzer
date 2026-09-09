@@ -236,6 +236,12 @@ export default function CompareView({
                   <th className="px-3 py-2">Event ID</th>
                   <th className="px-3 py-2">Delta</th>
                   <th className="px-3 py-2">Verdict</th>
+                  <th
+                    className="px-3 py-2"
+                    title="Heuristic: did the encoder likely force a keyframe at the splice point (FORCED), or fall through to its next natural GOP boundary (GOP_WAIT)? Requires --video-info-enabled."
+                  >
+                    GOP
+                  </th>
                   <th className="px-3 py-2">Pre-roll</th>
                   <th className="px-3 py-2">Signal</th>
                 </tr>
@@ -258,6 +264,11 @@ export default function CompareView({
                     </td>
                     <td className="px-3 py-2">
                       <Badge text={m.verdict ?? "–"} variant={verdictVariant(m.verdict)} />
+                    </td>
+                    <td className="px-3 py-2">
+                      {m.gop_verdict && m.gop_verdict !== "N/A" && (
+                        <Badge text={m.gop_verdict} variant={verdictVariant(m.gop_verdict)} />
+                      )}
                     </td>
                     <td className="px-3 py-2">
                       {m.preroll_verdict && m.preroll_verdict !== "N/A" && (
