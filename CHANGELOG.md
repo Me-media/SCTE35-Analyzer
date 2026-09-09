@@ -88,6 +88,18 @@ against this file.
   bare text, sits with more margin from the corner, and the page reserves
   extra bottom padding so a scrolled-to-bottom marker table's last row
   never ends up hidden behind it.
+- **The delta chart and the multi-stream comparison chart no longer visibly
+  enlarge their dots/text when the browser window is widened.** Both draw
+  into a fixed-size SVG `viewBox` stretched to fill a responsive container
+  via `preserveAspectRatio="none"` — dot radii and font sizes are authored
+  in that same coordinate space as the plotted axes, so whenever the
+  container grew wider than the fixed viewBox, the browser scaled
+  everything up to fill it, not just the plotted extent. Both charts now
+  measure their container's actual on-screen width (`ResizeObserver`, see
+  `lib/useContainerWidth.ts`) and use that as the viewBox width, keeping
+  the coordinate-to-pixel ratio at a constant 1:1 — so widening the window
+  now genuinely stretches the X/Y axes (more plotted width to work with)
+  while dots and text stay a fixed on-screen size, as intended.
 
 ## [0.10.1] - 2026-09-08
 

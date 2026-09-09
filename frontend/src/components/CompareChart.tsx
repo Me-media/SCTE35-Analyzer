@@ -1,5 +1,6 @@
 import { useMemo } from "react";
 import type { Marker } from "../api/types";
+import { useContainerWidth } from "../lib/useContainerWidth";
 
 export interface CompareSeries {
   jobId: string;
@@ -8,7 +9,10 @@ export interface CompareSeries {
   markers: Marker[];
 }
 
-const WIDTH = 900;
+// Only the initial-render fallback -- see useContainerWidth for why the
+// viewBox width has to track the container's actual measured width
+// (matches the same fix in DeltaChart.tsx).
+const DEFAULT_WIDTH = 900;
 const HEIGHT = 260;
 const PAD_LEFT = 56;
 const PAD_RIGHT = 16;
@@ -31,6 +35,7 @@ export default function CompareChart({
   hidden: Set<string>;
   onToggle: (jobId: string) => void;
 }) {
+  const [chartRef, WIDTH] = useContainerWidth(DEFAULT_WIDTH);
   const { points, tMin, tMax, yMin, yMax } = useMemo(() => {
     const pts: { jobId: string; jobName: string; color: string; t: number; delta: number; marker: Marker }[] = [];
     for (const s of series) {
@@ -89,6 +94,10 @@ export default function CompareChart({
         ))}
       </div>
 
+      {/* Kept mounted across every branch below so useContainerWidth has a
+          stable element to measure regardless of which state is showing --
+          see the same pattern/comment in DeltaChart.tsx. */}
+      <div ref={chartRef} className="w-full">
       {!hasAnyMarkers ? (
         <div className="flex h-[220px] items-center justify-center text-sm text-slate-500">No markers yet</div>
       ) : points.length === 0 ? (
@@ -125,6 +134,7 @@ export default function CompareChart({
           ))}
         </svg>
       )}
+      </div>
     </div>
   );
 }

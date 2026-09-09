@@ -6,6 +6,7 @@ import {
   formatUtcAxisTick,
   parseUtcWallclock,
 } from "../lib/time";
+import { useContainerWidth } from "../lib/useContainerWidth";
 import { verdictVariant } from "./Badge";
 
 const DOT_COLOR: Record<string, string> = {
@@ -16,7 +17,14 @@ const DOT_COLOR: Record<string, string> = {
   neutral: "#38bdf8",
 };
 
-const WIDTH = 900;
+// Only the initial-render fallback, before useContainerWidth reports the
+// plot's actual measured width below -- see that hook for why the viewBox
+// width has to track the real rendered width instead of staying fixed
+// (a fixed viewBox stretched to fill a wider container scales dot/text
+// size right along with the axes, since they share the same coordinate
+// space -- exactly the "chart enlarges when the window is resized" bug
+// this was built to fix).
+const DEFAULT_WIDTH = 900;
 const HEIGHT = 220;
 const PAD_LEFT = 56;
 const PAD_RIGHT = 16;
@@ -53,6 +61,7 @@ function pillClass(active: boolean): string {
  * with `key={jobId}` so switching jobs remounts it and resets the zoom,
  * instead of carrying a stale range over onto a different channel's data. */
 export default function DeltaChart({ markers, okThresholdMs }: { markers: Marker[]; okThresholdMs: number }) {
+  const [chartRef, WIDTH] = useContainerWidth(DEFAULT_WIDTH);
   const [range, setRange] = useState<Range>({ kind: "all" });
   const [showCustom, setShowCustom] = useState(false);
   const [draftStart, setDraftStart] = useState("");
@@ -215,6 +224,11 @@ export default function DeltaChart({ markers, okThresholdMs }: { markers: Marker
         </div>
       )}
 
+      {/* This wrapper is what useContainerWidth measures -- kept mounted
+          across both branches below (not just around the <svg>) so the
+          chart's real width is already known by the time data actually
+          shows up, instead of a one-frame jump from DEFAULT_WIDTH. */}
+      <div ref={chartRef} className="w-full">
       {visible.length === 0 ? (
         <div className="flex h-[220px] items-center justify-center text-sm text-slate-500">
           No markers in the selected time range
@@ -283,6 +297,7 @@ export default function DeltaChart({ markers, okThresholdMs }: { markers: Marker
           ))}
         </svg>
       )}
+      </div>
       <p className="mt-1 text-[10px] text-slate-500">Times shown on the axis are UTC.</p>
     </div>
   );
