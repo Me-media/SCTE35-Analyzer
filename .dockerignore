@@ -9,5 +9,10 @@ data
 backend/storage
 *.db
 *.md
+# Exception: CHANGELOG.md is intentionally shipped inside the image (see
+# the Dockerfile) so GET /api/changelog can serve it -- backs the "click
+# the version number" changelog view in the GUI. README.md and everything
+# else *.md stays out; only this one file is needed at runtime.
+!CHANGELOG.md
 .vscode
 .idea
