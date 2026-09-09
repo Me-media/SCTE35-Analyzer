@@ -21,8 +21,14 @@ import type { RefObject } from "react";
  * Returns a ref to attach to the measured container and its current
  * width; `defaultWidth` is only what's used for the very first render,
  * before the ResizeObserver has reported anything. */
-export function useContainerWidth(defaultWidth: number): [RefObject<HTMLDivElement | null>, number] {
-  const ref = useRef<HTMLDivElement | null>(null);
+export function useContainerWidth(defaultWidth: number): [RefObject<HTMLDivElement>, number] {
+  // `useRef<HTMLDivElement>(null)` (T given explicitly, null passed in) is
+  // the idiom that resolves to React's RefObject<HTMLDivElement> overload
+  // -- whose own `current` field is already typed `HTMLDivElement | null`
+  // -- rather than MutableRefObject<HTMLDivElement | null>, which is NOT
+  // assignable to a JSX `ref` prop typed RefObject<HTMLDivElement>|
+  // LegacyRef<HTMLDivElement> in this project's React type version.
+  const ref = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState(defaultWidth);
 
   useEffect(() => {
