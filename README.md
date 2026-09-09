@@ -245,6 +245,7 @@ dependent fields misleading (the same limitation as the CLI tool's
 | `SCTE35_ANALYZER_STORAGE_DIR` | `/data` | Root for the database, uploads, snapshots, clips |
 | `SCTE35_ANALYZER_MAX_UPLOAD_BYTES` | 20 GiB | Upper bound on file upload size |
 | `SCTE35_ANALYZER_LOG_LEVEL` | `INFO` | Python log level |
+| `SCTE35_ANALYZER_CHANGELOG` | `/app/CHANGELOG.md` | Path to the CHANGELOG.md served at `GET /api/changelog` (click the version number in the GUI). Only exists inside the Docker image by default — set this to your checkout's `CHANGELOG.md` for local `uvicorn` development, or the changelog view 404s (harmless; same spirit as `FRONTEND_DIST_DIR`) |
 
 ## Development (without Docker)
 

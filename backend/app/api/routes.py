@@ -31,6 +31,26 @@ def get_version():
     one. See CHANGELOG.md at the repo root for what changed per version."""
     return {"version": __version__}
 
+
+@router.get("/changelog")
+def get_changelog():
+    """Backs the "click the version number" changelog view in the GUI --
+    serves the exact CHANGELOG.md that shipped with THIS build (copied into
+    the image alongside app/ and frontend_dist/, see the Dockerfile and
+    config.CHANGELOG_PATH), rather than linking out to GitHub which may be
+    ahead of or behind what's actually deployed. 404s (rather than 500ing)
+    when the file isn't there -- e.g. local `uvicorn app.main:app` dev
+    without the Docker copy step -- same spirit as the FRONTEND_DIST_DIR
+    static-mount guard right below this router's routes."""
+    if not os.path.isfile(config.CHANGELOG_PATH):
+        raise HTTPException(
+            status_code=404,
+            detail="CHANGELOG.md isn't available in this deployment (expected at "
+                   f"{config.CHANGELOG_PATH}).",
+        )
+    with open(config.CHANGELOG_PATH, "r", encoding="utf-8") as f:
+        return {"content": f.read()}
+
 MARKER_CSV_FIELDS = [
     "wallclock", "cue_seq", "event_id", "command_type", "out_of_network",
     "target_pts_s", "raw_pts_time_s", "pts_adjustment_ticks", "idr_pts_s",

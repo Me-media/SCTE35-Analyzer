@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { api, connectJobSocket } from "../api/client";
 import type { Job, Marker, WsMessage } from "../api/types";
-import Badge, { jobStatusVariant, verdictVariant } from "./Badge";
+import Badge, { jobStatusVariant, verdictExplanation, verdictVariant } from "./Badge";
 import CompareChart from "./CompareChart";
 
 const COLORS = ["#38bdf8", "#f472b6", "#facc15", "#4ade80", "#a78bfa", "#fb923c", "#2dd4bf", "#f87171"];
@@ -263,21 +263,37 @@ export default function CompareView({
                       {m.delta_ms === null ? "–" : `${m.delta_ms > 0 ? "+" : ""}${m.delta_ms.toFixed(1)}ms`}
                     </td>
                     <td className="px-3 py-2">
-                      <Badge text={m.verdict ?? "–"} variant={verdictVariant(m.verdict)} />
+                      <Badge
+                        text={m.verdict ?? "–"}
+                        variant={verdictVariant(m.verdict)}
+                        title={verdictExplanation("verdict", m.verdict)}
+                      />
                     </td>
                     <td className="px-3 py-2">
                       {m.gop_verdict && m.gop_verdict !== "N/A" && (
-                        <Badge text={m.gop_verdict} variant={verdictVariant(m.gop_verdict)} />
+                        <Badge
+                          text={m.gop_verdict}
+                          variant={verdictVariant(m.gop_verdict)}
+                          title={verdictExplanation("gop_verdict", m.gop_verdict)}
+                        />
                       )}
                     </td>
                     <td className="px-3 py-2">
                       {m.preroll_verdict && m.preroll_verdict !== "N/A" && (
-                        <Badge text={m.preroll_verdict} variant={verdictVariant(m.preroll_verdict)} />
+                        <Badge
+                          text={m.preroll_verdict}
+                          variant={verdictVariant(m.preroll_verdict)}
+                          title={verdictExplanation("preroll_verdict", m.preroll_verdict)}
+                        />
                       )}
                     </td>
                     <td className="px-3 py-2">
                       {m.signal_verdict && m.signal_verdict !== "N/A" && (
-                        <Badge text={m.signal_verdict} variant={verdictVariant(m.signal_verdict)} />
+                        <Badge
+                          text={m.signal_verdict}
+                          variant={verdictVariant(m.signal_verdict)}
+                          title={verdictExplanation("signal_verdict", m.signal_verdict)}
+                        />
                       )}
                     </td>
                   </tr>

@@ -40,6 +40,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY backend/app ./app
 COPY --from=frontend-build /frontend/dist ./frontend_dist
+COPY CHANGELOG.md ./CHANGELOG.md
 
 ENV SCTE35_ANALYZER_STORAGE_DIR=/data \
     SCTE35_ANALYZER_FRONTEND_DIST=/app/frontend_dist \

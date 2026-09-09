@@ -39,6 +39,15 @@ FRONTEND_DIST_DIR = os.environ.get("SCTE35_ANALYZER_FRONTEND_DIST", "/app/fronte
 
 MAX_UPLOAD_BYTES = int(os.environ.get("SCTE35_ANALYZER_MAX_UPLOAD_BYTES", 20 * 1024 * 1024 * 1024))  # 20 GiB
 
+# CHANGELOG.md, copied into the image alongside app/ and frontend_dist/ (see
+# the Dockerfile) so GET /api/changelog -- what backs the "click the version
+# number" changelog view in the GUI -- can serve the exact file that shipped
+# with this build, not a link out to GitHub that may be ahead of or behind
+# what's actually deployed. Missing (e.g. local `uvicorn app.main:app` dev
+# without the Docker copy step) is handled as a normal 404, same spirit as
+# FRONTEND_DIST_DIR above -- not fatal, just unavailable outside the image.
+CHANGELOG_PATH = os.environ.get("SCTE35_ANALYZER_CHANGELOG", "/app/CHANGELOG.md")
+
 
 def ensure_dirs():
     os.makedirs(STORAGE_DIR, exist_ok=True)

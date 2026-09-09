@@ -41,6 +41,35 @@ against this file.
   included in CSV/JSON exports and the `markers` DB table (migrated in
   place for existing job databases).
 
+### Added
+- **Hover tooltips on every verdict badge** (`verdict`, `gop_verdict`,
+  `preroll_verdict`, `signal_verdict`) in the marker table and the
+  multi-stream comparison view — explains in plain language what that
+  specific value means (e.g. what `GOP_WAIT` or `PREROLL_SHORT` actually
+  indicates) without having to go dig through the README or the module
+  docstring.
+- **Click the version number to view the changelog**, right in the GUI.
+  New `GET /api/changelog` serves the exact `CHANGELOG.md` that shipped
+  with the running build (copied into the Docker image, see
+  `config.CHANGELOG_PATH`) rather than linking out to somewhere that could
+  be ahead of or behind what's actually deployed.
+
+### Fixed
+- **Main content area no longer caps out at 1152px wide on a large
+  monitor.** The job detail page's `<main>` column had an `xl:max-w-6xl`
+  cap that kicked in above the 1280px breakpoint, so the marker table
+  (13 columns as of `gop_verdict` above) stayed squeezed into a fixed
+  width with dead space to its right instead of actually gaining room as
+  the browser window grew. Removed — the content column now genuinely
+  follows the window/sidebar width. `NewJobForm` keeps its own
+  `mx-auto max-w-3xl` wrapper, so the new-job form is unaffected.
+- **The version number badge (bottom-right) no longer sits flush against
+  the edge of the screen, overlapping table content underneath it.** It's
+  now a solid pill (background + ring, like the verdict badges) instead of
+  bare text, sits with more margin from the corner, and the page reserves
+  extra bottom padding so a scrolled-to-bottom marker table's last row
+  never ends up hidden behind it.
+
 ## [0.10.1] - 2026-09-08
 
 ### Fixed

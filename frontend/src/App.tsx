@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { api } from "./api/client";
 import type { Job } from "./api/types";
+import ChangelogModal from "./components/ChangelogModal";
 import Clock from "./components/Clock";
 import CompareView from "./components/CompareView";
 import JobDetail from "./components/JobDetail";
@@ -20,6 +21,7 @@ export default function App() {
   const [jobs, setJobs] = useState<Job[]>([]);
   const [actionError, setActionError] = useState<string | null>(null);
   const [version, setVersion] = useState<string | null>(null);
+  const [showChangelog, setShowChangelog] = useState(false);
   // Ticked in the left sidebar to build up a comparison; persists across
   // navigation (e.g. tick two jobs while browsing the list, then compare)
   // and survives entering/leaving the compare view itself.
@@ -146,7 +148,22 @@ export default function App() {
           onStartCompare={() => setView({ name: "compare", jobIds: Array.from(compareSelection) })}
         />
 
-        <main className="min-h-0 min-w-0 flex-1 overflow-y-auto px-6 py-8">
+        <main className="min-h-0 min-w-0 flex-1 overflow-y-auto px-6 pb-16 pt-8">
+          {/* No max-w cap here on purpose (removed in v0.11.0) -- it used to
+              clamp this column to max-w-6xl (1152px) starting at the xl
+              breakpoint, so the marker table (13 columns as of gop_verdict)
+              stayed squeezed into a fixed width with dead space to its
+              right even on a maximized/ultra-wide monitor, instead of
+              actually gaining room as the window grew. Content that wants
+              a narrower reading column on a wide screen (e.g. NewJobForm)
+              constrains itself internally instead (mx-auto max-w-3xl),
+              so removing the cap here doesn't affect it.
+              Extra bottom padding (pb-16 instead of pb-8) is deliberate:
+              the version tag below is `fixed` at the bottom-right of the
+              viewport, so it floats over whatever content is scrolled
+              underneath it -- this reserves clear space so the last row of
+              a scrolled-to-bottom marker table doesn't end up sitting
+              right behind (and partly obscured by) it. */}
           {actionError && (
             <div className="mb-4 flex items-start justify-between gap-4 rounded-md bg-red-500/10 px-3 py-2 text-sm text-red-400 ring-1 ring-red-500/30">
               <span>{actionError}</span>
@@ -208,8 +225,15 @@ export default function App() {
       </div>
 
       {version && (
-        <div className="pointer-events-none fixed bottom-3 right-4 text-xs text-slate-600">v{version}</div>
+        <button
+          onClick={() => setShowChangelog(true)}
+          title="View changelog"
+          className="fixed bottom-4 right-5 z-40 rounded-full bg-slate-900/90 px-2.5 py-1 text-xs text-slate-500 shadow-lg ring-1 ring-slate-700 backdrop-blur hover:bg-slate-800 hover:text-slate-300"
+        >
+          v{version}
+        </button>
       )}
+      {showChangelog && <ChangelogModal onClose={() => setShowChangelog(false)} />}
     </div>
   );
 }

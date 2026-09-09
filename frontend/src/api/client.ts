@@ -40,6 +40,13 @@ export interface UpdateJobInput {
 
 export const api = {
   getVersion: () => req<{ version: string }>("/api/version"),
+  // Backs the "click the version number" changelog view -- the exact
+  // CHANGELOG.md that shipped with this build (see config.CHANGELOG_PATH),
+  // not a link out to GitHub that could be ahead of or behind what's
+  // actually deployed. 404s outside Docker (e.g. local `uvicorn` dev
+  // without SCTE35_ANALYZER_CHANGELOG set) -- callers should treat that as
+  // "unavailable", not a hard error.
+  getChangelog: () => req<{ content: string }>("/api/changelog"),
   listJobs: () => req<Job[]>("/api/jobs"),
   getJob: (id: string) => req<Job>(`/api/jobs/${id}`),
   stopJob: (id: string) => req<{ ok: boolean }>(`/api/jobs/${id}/stop`, { method: "POST" }),
