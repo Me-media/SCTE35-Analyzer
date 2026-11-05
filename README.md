@@ -179,8 +179,8 @@ Python dependencies (including `threefive3` for SCTE-35 decoding) and
 `ffmpeg` are installed inside the container at build time.
 
 ```bash
-git clone https://github.com/Me-media/ SCTE35-Analyzer.git
-cd  SCTE35-Analyzer
+git clone https://github.com/Me-media/SCTE35-Analyzer.git
+cd SCTE35-Analyzer
 docker compose up -d --build
 ```
 
@@ -190,7 +190,7 @@ note below for why the port isn't mapped via `-p` the usual way).
 ### Updating
 
 ```bash
-cd  SCTE35-Analyzer
+cd SCTE35-Analyzer
 git pull
 docker compose up -d --build
 ```
